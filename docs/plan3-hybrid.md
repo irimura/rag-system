@@ -1,8 +1,9 @@
 # 案3: ハイブリッド検索・本格構成(全社利用向け)
 
 **BM25(キーワード検索)とベクトル検索を併用するハイブリッド検索**を核とした本格構成。
-検索 DB に OpenSearch(kuromoji による日本語形態素解析 + k-NN を 1 台で両立)を採用し、
+検索 DB に OpenSearch(kuromoji による日本語形態素解析 + k-NN を 1 基盤で両立)を採用し、
 Nginx による TLS 終端、PostgreSQL による会話履歴永続化、LangGraph によるエージェント的な検索フローを備えます。
+基本は Node A(GPU / vLLM)+ Node B(アプリ+データ)の 2 ノードで開始し、負荷に応じて **OpenSearch を Node C(検索 DB 専用ノード)に分離**する拡張パスを持ちます。
 
 ## 構成図
 
@@ -10,7 +11,7 @@ Nginx による TLS 終端、PostgreSQL による会話履歴永続化、LangGra
 flowchart TB
     U(["ユーザー<br/>ブラウザ"])
 
-    subgraph host["Ubuntu Server(Docker Compose ※必要に応じ複数台へ分割)"]
+    subgraph nodeB["Node B: アプリ+データノード(Docker Compose / RAM 32GB〜)"]
         NGX["Nginx :443<br/>TLS 終端・リバースプロキシ"]
         OWUI["Open WebUI<br/>チャット画面・認証"]
 
@@ -23,15 +24,14 @@ flowchart TB
             QT --> HR --> FUS --> RR
         end
 
-        subgraph search["OpenSearch クラスタ :9200"]
+        subgraph search["OpenSearch :9200<br/>※負荷増大時は Node C(専用ノード)へ分離"]
             BM25[("BM25 インデックス<br/>kuromoji 日本語解析")]
             KNN[("k-NN インデックス<br/>(HNSW ベクトル)")]
         end
 
-        TEI_E["TEI(embed)<br/>BAAI/bge-m3"]
-        TEI_R["TEI(rerank)<br/>bge-reranker-v2-m3"]
+        TEI_E["TEI(embed / CPU)<br/>BAAI/bge-m3"]
+        TEI_R["TEI(rerank / CPU)<br/>bge-reranker-v2-m3"]
         PG[("PostgreSQL<br/>会話履歴・ユーザー・<br/>取り込みジョブ管理")]
-        VLLM["vLLM(稼働済み)<br/>OpenAI 互換 API<br/>GPU"]
 
         NGX --> OWUI
         OWUI --> ragapi
@@ -39,11 +39,15 @@ flowchart TB
         HR -->|"ベクトル検索"| KNN
         QT & HR -.->|"embed"| TEI_E
         RR --> TEI_R
-        ragapi -->|"生成"| VLLM
         OWUI --> PG
         ragapi --> PG
     end
 
+    subgraph nodeA["Node A: GPU ノード(VRAM 40GB+ / 既存)"]
+        VLLM["vLLM(稼働済み・推論専用)<br/>OpenAI 互換 API :8080"]
+    end
+
+    ragapi -->|"生成(HTTP)"| VLLM
     U -->|"HTTPS :443"| NGX
 
     subgraph ingestflow["取り込みパイプライン(ワーカー)"]
@@ -59,7 +63,7 @@ flowchart TB
 | 観点 | 内容 |
 |---|---|
 | 長所 | 型番・製品名・人名など**字面一致が重要なクエリに強い**(ベクトル検索単独の弱点を補完)。OpenSearch は全文検索・ベクトル・集計・監査ログを 1 基盤で担える |
-| 短所 | OpenSearch は JVM ベースでメモリ要件が高い(最低 8GB、推奨 16GB〜)。運用ノウハウが必要 |
+| 短所 | OpenSearch は JVM ベースでメモリ要件が高い(最低 8GB、推奨 16GB〜)。運用ノウハウが必要。Node B のメモリが逼迫したら Node C(検索 DB 専用ノード)への分離を検討 |
 | 日本語対応 | `analysis-kuromoji` プラグインで形態素解析ベースの BM25 を構成(N-gram との併用でさらに取りこぼし削減) |
 | 順位統合 | BM25 とベクトルの結果を **RRF(Reciprocal Rank Fusion)** で統合(OpenSearch 2.19+ はネイティブ対応。LangChain 側の EnsembleRetriever でも実装可) |
 | LangGraph | 「検索結果が不十分なら検索し直す」「質問を分解する」等のループ・分岐を持つ検索フローをグラフとして実装 |
@@ -125,6 +129,7 @@ flowchart LR
 ## 運用ポイント
 
 - **メモリ設計**: OpenSearch の JVM ヒープはホストの 50% 以下・32GB 以下。HNSW インデックスはヒープ外メモリを使うため余裕を持たせる
+- **ノード分割の拡張パス**: 全コンポーネントが HTTP で疎結合なため、Node B のメモリが逼迫したら OpenSearch(と PostgreSQL)を Node C に移すだけでよい(compose ファイルの分割と接続 URL の変更のみ。アプリのコード変更は不要)。GPU ノード(Node A)は常に推論専用を維持する
 - **インデックス設計**: `knowledge-v1` のような versioned index + エイリアスで、埋め込みモデル変更時の全再インデックスを無停止で実施
 - **セキュリティ**: Nginx で TLS 終端(Let's Encrypt / 社内 CA)。OpenSearch Security プラグインでインデックスレベルのアクセス制御
 - **評価**: 検索品質は Ragas(OSS)等で Hit Rate / MRR / Faithfulness を定点観測し、チャンクサイズや重みの変更効果を計測する

@@ -2,10 +2,12 @@
 
 - 対象環境: Ubuntu Server(オンプレミス / 自宅サーバ / VPS 等)
 - 前提: Hugging Face 形式のモデルを **vLLM** で稼働済み(OpenAI 互換 API)
+  - vLLM の要求スペック: **GPU VRAM 40GB 以上**(推論専用の GPU ノードとして扱う)
 - 方針:
   - **すべて無償の OSS** で構成する(ライセンス一覧は末尾参照)
   - **クラウド固有のマネージドサービスは使用しない**(全コンポーネントをセルフホスト)
   - オーケストレーションは **LangChain** を使用
+  - 全案共通で **GPU ノード(Node A)とアプリ+データノード(Node B)の 2 ノード構成** を基本とする(§2 参照)
 
 ## ドキュメント構成
 
@@ -39,7 +41,7 @@ flowchart LR
         EM2["Embedding Model"]
         RET["Retriever"]
         RR["Reranker"]
-        LLM["vLLM<br/>(OpenAI 互換 API)"]
+        LLM["vLLM(Node A / GPU)<br/>OpenAI 互換 API"]
         UI --> API
         API --> EM2 --> RET --> RR --> LLM
         LLM --> API --> UI
@@ -68,13 +70,59 @@ flowchart LR
 
 ---
 
-## 2. 実装案の比較
+## 2. サーバ構成方針 — GPU ノードとアプリノードの分離
+
+vLLM の要求スペック(GPU VRAM 40GB 以上)を踏まえ、全案共通で **2 ノード構成**を基本とします。
+RDB を DB サーバに分離するのと同じ考え方で、高価な GPU ノードを推論専用に隔離し、データを持つコンポーネントを通常サーバ側に集約します。
+
+```mermaid
+flowchart LR
+    U(["ユーザー"])
+
+    subgraph nodeB["Node B: アプリ+データノード(通常サーバ / RAM 16〜32GB 目安)"]
+        UI["WebUI"]
+        API["RAG API<br/>(LangChain)"]
+        TEI["Embedding / Rerank<br/>(CPU 実行)"]
+        VDB[("Vector store")]
+        PG[("PostgreSQL<br/>※案3")]
+        UI --> API
+        API --> TEI
+        API <--> VDB
+        API -.-> PG
+    end
+
+    subgraph nodeA["Node A: GPU ノード(VRAM 40GB+ / 既存)"]
+        VLLM["vLLM(推論専用・ステートレス)<br/>OpenAI 互換 API :8080"]
+    end
+
+    U --> UI
+    API -->|"chat/completions<br/>(HTTP)"| VLLM
+```
+
+### 分離の理由
+
+| 観点 | 内容 |
+|---|---|
+| リソース競合の回避 | vLLM はデフォルトで VRAM の約 9 割を確保し、CPU も前処理で消費する。OpenSearch の JVM ヒープや embedding モデルを同居させると互いに OOM リスクを持ち込み合う |
+| データとステートの分離 | vLLM は完全にステートレス。一方 Vector store・PostgreSQL・取り込み済みインデックスは「壊れたら困るデータ」。CUDA/ドライバ更新や再起動の頻度が高い GPU ノードにデータを置かない |
+| ライフサイクルの独立 | GPU ノードの増強・交換・他用途との共用がデータ側に影響しない。バックアップ対象は Node B に集約される |
+
+### 設計上の補足
+
+- **Embedding / Rerank は Node B の CPU で実行する。** bge-m3 / bge-reranker クラス(2GB 前後)は CPU で実用速度が出る。Node A の VRAM は LLM が使い切る前提のため、GPU への同居(`--gpu-memory-utilization` を下げて空ける)は検証段階では避ける。取り込みバッチが遅い場合にのみ、Node B への小型 GPU 追加を検討する
+- **検証段階で機能毎の完全分割(WebUI / API / DB を別ノードに)はやり過ぎ。** 全コンポーネントは HTTP API(OpenAI 互換・TEI・Qdrant 等)で疎結合なので、Node B 内は Docker Compose のコンテナ分離で責務を分けておけば、負荷が見えてきた段階で compose ファイルの分割と接続 URL の変更だけでノードを分割できる(案3 では DB を Node C に分離する拡張パスを記載)
+- ノード間は HTTP のみ。LAN 内であればレイテンシへの影響は無視できる
+
+---
+
+## 3. 実装案の比較
 
 3 案を用意しました。**案2 を推奨**とし、要件の変化に応じて案1(縮小)・案3(拡張)へスライドできる設計です。
 
 | | 案1: 最小構成 | 案2: 標準構成(推奨) | 案3: 本格構成 |
 |---|---|---|---|
 | 詳細 | [plan1-minimal.md](docs/plan1-minimal.md) | [plan2-standard.md](docs/plan2-standard.md) | [plan3-hybrid.md](docs/plan3-hybrid.md) |
+| ノード構成 | Node A + Node B | Node A + Node B | Node A + Node B(将来 DB を Node C に分離可) |
 | WebUI | Chainlit(API 同居) | Open WebUI | Open WebUI + Nginx(TLS) |
 | RAG API | Chainlit プロセス内 | FastAPI + LangChain | FastAPI + LangGraph |
 | 検索 DB | Chroma(組み込み) | Qdrant | OpenSearch(Hybrid)or Milvus |
@@ -82,9 +130,10 @@ flowchart LR
 | Rerank | プロセス内 CrossEncoder | TEI rerank | TEI rerank |
 | 検索方式 | ベクトルのみ | ベクトル + MMR | **ハイブリッド(BM25 + ベクトル)+ RRF** |
 | 会話履歴 | なし(メモリ) | Open WebUI 内蔵(SQLite) | PostgreSQL |
-| デプロイ | venv + systemd | Docker Compose | Docker Compose |
+| デプロイ(Node B) | venv + systemd | Docker Compose | Docker Compose |
 | 想定規模 | 個人・PoC(〜数千文書) | 部門(〜数十万チャンク) | 全社(数百万チャンク〜) |
-| GPU 追加消費 | 小(embedding を CPU 可) | 中 | 中〜大 |
+| vLLM 以外の GPU | 不要(CPU で完結) | 不要(TEI は CPU 版。取り込み高速化に任意で追加) | 任意(取り込み・rerank 高速化に Node B へ小型 GPU 追加を検討) |
+| Node B の RAM 目安 | 8GB〜 | 16GB〜 | 32GB〜(OpenSearch ヒープ含む) |
 
 **選定の目安:**
 
@@ -94,7 +143,7 @@ flowchart LR
 
 ---
 
-## 3. 精度向上の要点(サマリ)
+## 4. 精度向上の要点(サマリ)
 
 詳細は [docs/rag-components.md](docs/rag-components.md)。特に効果が大きい順に:
 
@@ -106,7 +155,7 @@ flowchart LR
 
 ---
 
-## 4. 使用ソフトウェアとライセンス一覧
+## 5. 使用ソフトウェアとライセンス一覧
 
 すべて無償で利用可能(セルフホスト)。
 

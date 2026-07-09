@@ -1,7 +1,8 @@
 # 案2: Docker Compose 標準構成(部門利用向け・推奨)
 
-各コンポーネントをコンテナに分離し、**Docker Compose で 1 台の Ubuntu Server 上に構築**する標準構成。
-WebUI に Open WebUI(認証・会話履歴内蔵)、検索 DB に Qdrant、Embedding/Rerank は TEI(Text Embeddings Inference)専用コンテナに分離します。
+各コンポーネントをコンテナに分離し、**アプリノード(Node B)上に Docker Compose で構築**する標準構成。
+vLLM は GPU ノード(Node A)で稼働済みのものを HTTP 経由で利用し、Node A には手を入れません。
+WebUI に Open WebUI(認証・会話履歴内蔵)、検索 DB に Qdrant、Embedding/Rerank は TEI(Text Embeddings Inference)専用コンテナ(CPU 版)に分離します。
 
 ## 構成図
 
@@ -9,7 +10,7 @@ WebUI に Open WebUI(認証・会話履歴内蔵)、検索 DB に Qdrant、Embed
 flowchart TB
     U(["ユーザー<br/>ブラウザ"])
 
-    subgraph host["Ubuntu Server(Docker Compose)"]
+    subgraph nodeB["Node B: アプリ+データノード(Docker Compose / RAM 16GB〜)"]
         OWUI["Open WebUI :3000<br/>認証・会話履歴(SQLite 内蔵)<br/>チャット画面"]
 
         subgraph ragapi["RAG API コンテナ :8000"]
@@ -19,17 +20,20 @@ flowchart TB
         end
 
         QD[("Qdrant :6333<br/>Vector store<br/>(named volume 永続化)")]
-        TEI_E["TEI(embed):8081<br/>BAAI/bge-m3"]
-        TEI_R["TEI(rerank):8082<br/>bge-reranker-v2-m3"]
-        VLLM["vLLM(稼働済み)<br/>OpenAI 互換 API :8080<br/>GPU"]
+        TEI_E["TEI(embed / CPU):8081<br/>BAAI/bge-m3"]
+        TEI_R["TEI(rerank / CPU):8082<br/>bge-reranker-v2-m3"]
 
         OWUI -->|"OpenAI 互換<br/>chat/completions"| API
         LC -->|"embed"| TEI_E
         LC -->|"検索 (k=20)"| QD
         LC -->|"rerank → top4"| TEI_R
-        LC -->|"生成"| VLLM
     end
 
+    subgraph nodeA["Node A: GPU ノード(VRAM 40GB+ / 既存)"]
+        VLLM["vLLM(稼働済み・推論専用)<br/>OpenAI 互換 API :8080"]
+    end
+
+    LC -->|"生成(HTTP)"| VLLM
     U -->|"HTTP :3000"| OWUI
 
     subgraph ingestflow["取り込み(バッチ / cron)"]
@@ -43,8 +47,8 @@ flowchart TB
 
 | 観点 | 内容 |
 |---|---|
-| 長所 | 責務ごとにコンテナ分離され、個別に再起動・更新・スケール可能。Open WebUI によりログイン認証と会話履歴が最初から使える |
-| 短所 | 案1 より構成要素が多い。GPU を vLLM と TEI で分け合う設計判断が必要(TEI は CPU 動作も可) |
+| 長所 | 責務ごとにコンテナ分離され、個別に再起動・更新・スケール可能。Open WebUI によりログイン認証と会話履歴が最初から使える。GPU ノードは推論専用のまま |
+| 短所 | 案1 より構成要素が多い。Node B のメモリ設計(TEI 2 台 + Qdrant + WebUI で 16GB〜目安)が必要 |
 | RAG API の位置づけ | LangChain 部分を **OpenAI 互換 API** として実装し、Open WebUI からは「1 つのモデル」に見せる(Open WebUI の Direct Connections で登録) |
 | Embedding/Rerank | TEI コンテナに分離。API プロセスが軽くなり、取り込みバッチと問い合わせで同じ埋め込みサーバを共用できる |
 | Qdrant | Rust 製で軽量・高速。メタデータフィルタ(部署・年度など)やスカラー量子化によるメモリ削減に対応 |
@@ -66,11 +70,11 @@ services:
     build: ./rag-api          # FastAPI + LangChain
     ports: ["8000:8000"]
     environment:
-      - VLLM_BASE_URL=http://host.docker.internal:8080/v1
+      # Node A(GPU ノード)の vLLM を LAN 経由で指定
+      - VLLM_BASE_URL=http://node-a.example.internal:8080/v1
       - QDRANT_URL=http://qdrant:6333
       - TEI_EMBED_URL=http://tei-embed:80
       - TEI_RERANK_URL=http://tei-rerank:80
-    extra_hosts: ["host.docker.internal:host-gateway"]
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -95,7 +99,7 @@ volumes:
   hf-cache:
 ```
 
-> GPU に余裕がある場合は TEI のイメージを GPU 版(例: `text-embeddings-inference:89-latest` 等、GPU 世代に応じたタグ)に替え、`deploy.resources.reservations.devices` で GPU を割り当てると取り込みが大幅に高速化します。vLLM 側と同居させる場合は vLLM の `--gpu-memory-utilization` を下げて VRAM を空けてください。
+> TEI は CPU 版で開始します(bge-m3 / bge-reranker クラスは CPU で実用速度)。取り込みバッチが遅くて困る場合の高速化は、**Node B への小型 GPU 追加**(TEI イメージを GPU 版タグに変更し `deploy.resources.reservations.devices` で割り当て)を第一候補としてください。Node A への同居(vLLM の `--gpu-memory-utilization` を下げて VRAM を空ける)も技術的には可能ですが、VRAM 40GB を LLM が使い切る前提のため検証段階では推奨しません。
 
 ## RAG API 実装例(rag-api/main.py 抜粋)
 

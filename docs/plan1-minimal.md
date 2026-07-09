@@ -1,7 +1,8 @@
 # 案1: シングルプロセス最小構成(PoC / 個人利用向け)
 
 WebUI・RAG ロジック・ベクトル DB を **1 つの Python プロセス(Chainlit)に同居**させる最小構成。
-Docker 不要で venv + systemd だけで動き、最速で RAG を体験・検証できます。
+vLLM が稼働する GPU ノード(Node A)とは分離し、**アプリノード(Node B)上の 1 プロセス**で完結させます。
+Node B 側は Docker 不要で venv + systemd だけで動き、最速で RAG を体験・検証できます。
 
 ## 構成図
 
@@ -9,44 +10,47 @@ Docker 不要で venv + systemd だけで動き、最速で RAG を体験・検�
 flowchart TB
     U(["ユーザー<br/>ブラウザ"])
 
-    subgraph host["Ubuntu Server(1 台)"]
+    subgraph nodeB["Node B: アプリノード(Ubuntu / 通常サーバ・RAM 8GB〜)"]
         subgraph app["Chainlit アプリ(Python venv / systemd) :8000"]
             UI["WebUI(Chainlit)"]
             LC["LangChain<br/>RAG チェーン"]
-            EMB["Embedding<br/>sentence-transformers<br/>(multilingual-e5-large)"]
-            RRK["Reranker<br/>CrossEncoder<br/>(bge-reranker-v2-m3)"]
+            EMB["Embedding<br/>sentence-transformers<br/>(multilingual-e5-large / CPU)"]
+            RRK["Reranker<br/>CrossEncoder<br/>(bge-reranker-v2-m3 / CPU)"]
             UI --> LC
             LC --> EMB
             LC --> RRK
         end
 
         CH[("Chroma<br/>(組み込みモード)<br/>./chroma_db に永続化")]
-        VLLM["vLLM(稼働済み)<br/>OpenAI 互換 API :8080<br/>GPU"]
 
         LC <-->|"類似検索"| CH
         EMB -->|"ベクトル登録"| CH
-        LC -->|"chat/completions"| VLLM
     end
 
+    subgraph nodeA["Node A: GPU ノード(VRAM 40GB+ / 既存)"]
+        VLLM["vLLM(稼働済み・推論専用)<br/>OpenAI 互換 API :8080"]
+    end
+
+    LC -->|"chat/completions(HTTP)"| VLLM
     U -->|"HTTP :8000"| UI
 
-    ING["取り込みスクリプト<br/>ingest.py(バッチ実行)"] --> EMB
+    ING["取り込みスクリプト<br/>ingest.py(Node B でバッチ実行)"] --> EMB
 ```
 
 ## 特徴
 
 | 観点 | 内容 |
 |---|---|
-| 長所 | 構成要素が最少。依存はすべて pip。障害点が少なくデバッグ容易 |
+| 長所 | Node B 側の構成要素が最少。依存はすべて pip。障害点が少なくデバッグ容易。GPU ノードには一切手を入れない |
 | 短所 | プロセス再起動で会話履歴消失。同時アクセスに弱い。Embedding/Rerank が API プロセスの CPU/メモリを消費 |
-| 検索 DB | Chroma を**組み込みモード**(サーバ不要、ローカルディレクトリに永続化)で使用 |
-| Embedding | プロセス内で sentence-transformers を実行(CPU でも実用速度。GPU が空いていれば `device="cuda"`) |
+| 検索 DB | Chroma を**組み込みモード**(サーバ不要、ローカルディレクトリに永続化)で使用。データは Node B に閉じる |
+| Embedding | Node B のプロセス内で sentence-transformers を **CPU 実行**(e5 / bge クラスは CPU で実用速度)。Node A の VRAM は LLM 専用のため使わない |
 | 移行性 | LangChain の `VectorStore` 抽象のおかげで、案2 の Qdrant へはコード数行の変更で移行可能 |
 
 ## セットアップ手順(概要)
 
 ```bash
-# Ubuntu Server 上
+# Node B(アプリノード)上
 python3 -m venv ~/rag/.venv && source ~/rag/.venv/bin/activate
 pip install langchain langchain-community langchain-openai langchain-huggingface \
             langchain-chroma chainlit sentence-transformers \
@@ -90,8 +94,8 @@ from langchain.retrievers import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors import CrossEncoderReranker
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 
-llm = ChatOpenAI(  # vLLM の OpenAI 互換エンドポイントを指定
-    base_url="http://localhost:8080/v1", api_key="dummy",
+llm = ChatOpenAI(  # Node A(GPU ノード)の vLLM を指定
+    base_url="http://node-a.example.internal:8080/v1", api_key="dummy",
     model="your-hf-model-name",
 )
 embeddings = HuggingFaceEmbeddings(model_name="intfloat/multilingual-e5-large")
