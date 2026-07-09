@@ -18,6 +18,9 @@
 | [docs/plan2-standard.md](docs/plan2-standard.md) | 案2: Docker Compose 標準構成 |
 | [docs/plan3-hybrid.md](docs/plan3-hybrid.md) | 案3: ハイブリッド検索・本格構成 |
 | [docs/rag-components.md](docs/rag-components.md) | RAG 精度向上のための構成要素解説(Loader / Transformer / Embedding / Vector store / Retriever / Rerank) |
+| [docs/evaluation-spec.md](docs/evaluation-spec.md) | RAG 精度評価のテスト仕様書(指標定義・テスト観点 TC01〜TC10・実行手順・合否基準) |
+| [docs/test-data.md](docs/test-data.md) | テストデータ集(Vector store 投入用の公開コーパス・評価用 QA データセットへのリンク) |
+| [eval/golden_dataset.sample.jsonl](eval/golden_dataset.sample.jsonl) | ゴールデンデータセットのサンプル(テスト観点別 10 ケース) |
 
 ---
 
