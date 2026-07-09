@@ -1,0 +1,131 @@
+# vLLM + LangChain による RAG システム インフラ構成 設計資料
+
+- 対象環境: Ubuntu Server(オンプレミス / 自宅サーバ / VPS 等)
+- 前提: Hugging Face 形式のモデルを **vLLM** で稼働済み(OpenAI 互換 API)
+- 方針:
+  - **すべて無償の OSS** で構成する(ライセンス一覧は末尾参照)
+  - **クラウド固有のマネージドサービスは使用しない**(全コンポーネントをセルフホスト)
+  - オーケストレーションは **LangChain** を使用
+
+## ドキュメント構成
+
+| ファイル | 内容 |
+|---|---|
+| [README.md](README.md) | 本資料(全体設計・実装案・精度向上の解説) |
+| [docs/plan1-minimal.md](docs/plan1-minimal.md) | 案1: シングルプロセス最小構成 |
+| [docs/plan2-standard.md](docs/plan2-standard.md) | 案2: Docker Compose 標準構成 |
+| [docs/plan3-hybrid.md](docs/plan3-hybrid.md) | 案3: ハイブリッド検索・本格構成 |
+| [docs/rag-components.md](docs/rag-components.md) | RAG 精度向上のための構成要素解説(Loader / Transformer / Embedding / Vector store / Retriever / Rerank) |
+
+---
+
+## 1. 全体像 — RAG に必要な構成要素
+
+RAG(Retrieval-Augmented Generation)システムは、大きく **オフラインの取り込み系(Ingestion)** と **オンラインの問い合わせ系(Query)** の 2 系統で構成されます。
+
+```mermaid
+flowchart LR
+    subgraph ingest["取り込み系(オフライン / バッチ)"]
+        SRC[("原本文書<br/>PDF / Office / HTML / Markdown")]
+        DL["Document Loader"]
+        TR["Document Transformer<br/>(チャンク分割・整形)"]
+        EM1["Embedding Model"]
+        SRC --> DL --> TR --> EM1
+    end
+
+    subgraph query["問い合わせ系(オンライン)"]
+        UI["WebUI"]
+        API["RAG API<br/>(LangChain)"]
+        EM2["Embedding Model"]
+        RET["Retriever"]
+        RR["Reranker"]
+        LLM["vLLM<br/>(OpenAI 互換 API)"]
+        UI --> API
+        API --> EM2 --> RET --> RR --> LLM
+        LLM --> API --> UI
+    end
+
+    VDB[("Vector Store<br/>(検索 DB)")]
+    EM1 --> VDB
+    RET <--> VDB
+```
+
+### 構成要素と役割
+
+| 構成要素 | 役割 | 代表的な OSS 選択肢 |
+|---|---|---|
+| **WebUI** | ユーザーとの対話画面(チャット・出典表示) | Open WebUI / Chainlit / Streamlit / Gradio |
+| **RAG API** | LangChain によるオーケストレーション層 | FastAPI + LangChain / LangGraph |
+| **LLM 推論** | 回答生成(稼働済み) | vLLM(OpenAI 互換エンドポイント) |
+| **Embedding** | テキストのベクトル化 | `multilingual-e5` / `BAAI/bge-m3` / `ruri` を sentence-transformers・TEI・Infinity・vLLM(`--runner pooling`)で配信 |
+| **検索 DB(Vector store)** | ベクトル(+全文)インデックスの保存・検索 | Chroma / Qdrant / pgvector / Milvus / OpenSearch |
+| **Retriever** | クエリに対する関連文書の取得戦略 | LangChain Retriever(similarity / MMR / Hybrid / Multi-Query 等) |
+| **Reranker** | 取得結果の再順位付けによる精度向上 | `BAAI/bge-reranker-v2-m3`(CrossEncoder / TEI rerank) |
+| **リバースプロキシ** | TLS 終端・ルーティング(案3) | Nginx / Caddy |
+| **メタデータ DB** | 会話履歴・ユーザー管理(案3) | PostgreSQL |
+
+> 各要素の詳細と精度向上のポイントは [docs/rag-components.md](docs/rag-components.md) を参照。
+
+---
+
+## 2. 実装案の比較
+
+3 案を用意しました。**案2 を推奨**とし、要件の変化に応じて案1(縮小)・案3(拡張)へスライドできる設計です。
+
+| | 案1: 最小構成 | 案2: 標準構成(推奨) | 案3: 本格構成 |
+|---|---|---|---|
+| 詳細 | [plan1-minimal.md](docs/plan1-minimal.md) | [plan2-standard.md](docs/plan2-standard.md) | [plan3-hybrid.md](docs/plan3-hybrid.md) |
+| WebUI | Chainlit(API 同居) | Open WebUI | Open WebUI + Nginx(TLS) |
+| RAG API | Chainlit プロセス内 | FastAPI + LangChain | FastAPI + LangGraph |
+| 検索 DB | Chroma(組み込み) | Qdrant | OpenSearch(Hybrid)or Milvus |
+| Embedding | プロセス内(sentence-transformers) | TEI(専用コンテナ) | TEI(専用コンテナ) |
+| Rerank | プロセス内 CrossEncoder | TEI rerank | TEI rerank |
+| 検索方式 | ベクトルのみ | ベクトル + MMR | **ハイブリッド(BM25 + ベクトル)+ RRF** |
+| 会話履歴 | なし(メモリ) | Open WebUI 内蔵(SQLite) | PostgreSQL |
+| デプロイ | venv + systemd | Docker Compose | Docker Compose |
+| 想定規模 | 個人・PoC(〜数千文書) | 部門(〜数十万チャンク) | 全社(数百万チャンク〜) |
+| GPU 追加消費 | 小(embedding を CPU 可) | 中 | 中〜大 |
+
+**選定の目安:**
+
+- まず動くものを最速で → **案1**
+- 複数ユーザーで常用・運用も見据える → **案2**
+- 日本語の型番・固有名詞検索が多い、文書量が多い → **案3**(BM25 併用が効く)
+
+---
+
+## 3. 精度向上の要点(サマリ)
+
+詳細は [docs/rag-components.md](docs/rag-components.md)。特に効果が大きい順に:
+
+1. **Reranker の導入** — Retriever で広め(k=20〜50)に取り、CrossEncoder で上位 3〜5 件に絞る。最も費用対効果が高い。
+2. **チャンク分割の見直し** — 文書構造(見出し)を保った分割 + 適切なチャンクサイズ。日本語はセパレータ調整が必須。
+3. **ハイブリッド検索** — 型番・製品名・略語などキーワード一致が重要なドメインでは BM25 併用が有効(案3)。
+4. **Embedding モデルの選定** — 日本語なら `multilingual-e5-large` / `bge-m3` / `ruri` 系。ベクトル DB より先にモデルを吟味する。
+5. **クエリ変換** — Multi-Query / HyDE で「質問文と文書の表現の乖離」を吸収。
+
+---
+
+## 4. 使用ソフトウェアとライセンス一覧
+
+すべて無償で利用可能(セルフホスト)。
+
+| ソフトウェア | 用途 | ライセンス |
+|---|---|---|
+| vLLM | LLM 推論 | Apache-2.0 |
+| LangChain / LangGraph | オーケストレーション | MIT |
+| FastAPI / Uvicorn | API サーバ | MIT / BSD-3 |
+| Chainlit | WebUI(案1) | Apache-2.0 |
+| Open WebUI | WebUI(案2/3) | BSD-3 ベース(ブランディング条項付き。無償利用可) |
+| Chroma | Vector store(案1) | Apache-2.0 |
+| Qdrant | Vector store(案2) | Apache-2.0 |
+| Milvus | Vector store(案3 代替) | Apache-2.0 |
+| OpenSearch | ハイブリッド検索(案3) | Apache-2.0 |
+| pgvector / PostgreSQL | Vector store 代替 / メタデータ DB | PostgreSQL License |
+| Text Embeddings Inference (TEI) | Embedding / Rerank 配信 | Apache-2.0 |
+| sentence-transformers | Embedding / CrossEncoder(プロセス内) | Apache-2.0 |
+| Nginx | リバースプロキシ | BSD-2 |
+| Docker / Docker Compose | コンテナ実行 | Apache-2.0(Engine。Ubuntu では docker.io / docker-compose-v2 パッケージ) |
+| モデル: multilingual-e5, bge-m3, bge-reranker-v2-m3 | Embedding / Rerank | MIT 等(各モデルカードを確認) |
+
+> **注意:** モデル本体のライセンスは Hugging Face の各モデルカードで要確認。上記代表例はいずれも商用利用可のものを挙げています。
