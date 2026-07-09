@@ -4,6 +4,8 @@ WebUI・RAG ロジック・ベクトル DB を **1 つの Python プロセス(Ch
 vLLM が稼働する GPU ノード(Node A)とは分離し、**アプリノード(Node B)上の 1 プロセス**で完結させます。
 Node B 側は Docker 不要で venv + systemd だけで動き、最速で RAG を体験・検証できます。
 
+> **構築ファイル**: [deploy/plan1/](../deploy/plan1/)(Docker 版)/ 手順: [deployment-guide.md](deployment-guide.md)。本書後半の venv + systemd 手順はコンテナを使わない場合の代替。
+
 ## 構成図
 
 ```mermaid

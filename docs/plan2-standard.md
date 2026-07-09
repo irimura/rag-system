@@ -4,6 +4,8 @@
 vLLM は GPU ノード(Node A)で稼働済みのものを HTTP 経由で利用し、Node A には手を入れません。
 WebUI に Open WebUI(認証・会話履歴内蔵)、検索 DB に Qdrant、Embedding/Rerank は TEI(Text Embeddings Inference)専用コンテナ(CPU 版)に分離します。
 
+> **構築ファイル**: [deploy/plan2/](../deploy/plan2/)(完全版 compose + rag-api 実装)/ 手順: [deployment-guide.md](deployment-guide.md)。本書のコードは設計説明用の抜粋。
+
 ## 構成図
 
 ```mermaid

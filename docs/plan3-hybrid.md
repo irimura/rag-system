@@ -5,6 +5,8 @@
 Nginx による TLS 終端、PostgreSQL による会話履歴永続化、LangGraph によるエージェント的な検索フローを備えます。
 基本は Node A(GPU / vLLM)+ Node B(アプリ+データ)の 2 ノードで開始し、負荷に応じて **OpenSearch を Node C(検索 DB 専用ノード)に分離**する拡張パスを持ちます。
 
+> **構築ファイル**: [deploy/plan3/](../deploy/plan3/)(compose + nginx conf + kuromoji 入り OpenSearch イメージ + LangGraph 実装)/ 手順: [deployment-guide.md](deployment-guide.md)。本書のコードは設計説明用の抜粋。
+
 ## 構成図
 
 ```mermaid

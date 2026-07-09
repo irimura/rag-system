@@ -1,0 +1,60 @@
+{
+  "settings": {
+    "index": {
+      "knn": true
+    },
+    "analysis": {
+      "analyzer": {
+        "ja_kuromoji": {
+          "type": "custom",
+          "tokenizer": "kuromoji_tokenizer",
+          "filter": [
+            "kuromoji_baseform",
+            "kuromoji_part_of_speech",
+            "ja_stop",
+            "kuromoji_stemmer",
+            "lowercase"
+          ]
+        },
+        "ja_bigram": {
+          "type": "custom",
+          "tokenizer": "ja_bigram_tokenizer",
+          "filter": ["lowercase"]
+        }
+      },
+      "tokenizer": {
+        "ja_bigram_tokenizer": {
+          "type": "ngram",
+          "min_gram": 2,
+          "max_gram": 2
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "text": {
+        "type": "text",
+        "analyzer": "ja_kuromoji",
+        "fields": {
+          "bigram": {
+            "type": "text",
+            "analyzer": "ja_bigram"
+          }
+        }
+      },
+      "vector": {
+        "type": "knn_vector",
+        "dimension": 1024,
+        "method": {
+          "name": "hnsw",
+          "engine": "lucene",
+          "space_type": "cosinesimil"
+        }
+      },
+      "source": {
+        "type": "keyword"
+      }
+    }
+  }
+}

@@ -1,0 +1,110 @@
+# 案3: ハイブリッド検索・本格構成(Node B)
+# 構築手順: docs/deployment-guide.md
+# 事前に必須: sudo sysctl -w vm.max_map_count=262144(OpenSearch 要件)
+# 外部公開は nginx(80/443)のみ。他は 127.0.0.1 バインド
+services:
+  nginx:
+    image: nginx:stable
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - open-webui
+    restart: unless-stopped
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    environment:
+      - OPENAI_API_BASE_URL=http://rag-api:8000/v1
+      - OPENAI_API_KEY=dummy
+      - ENABLE_OLLAMA_API=false
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      # 会話履歴・ユーザーを PostgreSQL に永続化
+      - DATABASE_URL=postgresql://openwebui:${POSTGRES_PASSWORD}@postgres:5432/openwebui
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      - postgres
+      - rag-api
+    restart: unless-stopped
+
+  rag-api:
+    build: ./rag-api
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file: .env
+    depends_on:
+      - opensearch
+      - tei-embed
+      - tei-rerank
+    restart: unless-stopped
+
+  opensearch:
+    build: ./opensearch          # analysis-kuromoji プラグイン入りイメージ
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true   # 内部ネットワーク限定運用。外部公開時は必ず有効化する
+      - bootstrap.memory_lock=true
+      - OPENSEARCH_JAVA_OPTS=-Xms${OS_HEAP:-4g} -Xmx${OS_HEAP:-4g}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=openwebui
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=openwebui
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  tei-embed:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    command: ["--model-id", "${EMBED_MODEL}"]
+    ports:
+      - "127.0.0.1:8081:80"
+    volumes:
+      - hf-cache:/data
+    restart: unless-stopped
+
+  tei-rerank:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    command: ["--model-id", "${RERANK_MODEL}"]
+    ports:
+      - "127.0.0.1:8082:80"
+    volumes:
+      - hf-cache:/data
+    restart: unless-stopped
+
+  # 取り込みバッチ: docker compose --profile ingest run --rm ingest
+  ingest:
+    build: ./rag-api
+    profiles: ["ingest"]
+    command: ["python", "ingest.py"]
+    env_file: .env
+    volumes:
+      - ./documents:/data/documents:ro
+      - ./opensearch/index-mapping.json:/app/index-mapping.json:ro
+    depends_on:
+      - opensearch
+      - tei-embed
+
+volumes:
+  open-webui-data:
+  opensearch-data:
+  pg-data:
+  hf-cache:

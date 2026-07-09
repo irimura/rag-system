@@ -1,0 +1,15 @@
+# 環境変数(接続先・秘密情報)— .env.example を元に各自作成する
+deploy/**/.env
+
+# 投入文書(ユーザーデータ)
+deploy/**/documents/*
+!deploy/**/documents/.gitkeep
+
+# TLS 証明書・秘密鍵
+deploy/plan3/nginx/certs/*
+!deploy/plan3/nginx/certs/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.venv/

@@ -1,0 +1,72 @@
+# 案2: Docker Compose 標準構成(Node B)
+# 構築手順: docs/deployment-guide.md
+# デバッグ用ポート(qdrant/tei/rag-api)は 127.0.0.1 バインドで外部非公開
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    ports:
+      - "3000:8080"
+    environment:
+      - OPENAI_API_BASE_URL=http://rag-api:8000/v1
+      - OPENAI_API_KEY=dummy
+      - ENABLE_OLLAMA_API=false
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+    volumes:
+      - open-webui-data:/app/backend/data
+    depends_on:
+      - rag-api
+    restart: unless-stopped
+
+  rag-api:
+    build: ./rag-api
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file: .env
+    depends_on:
+      - qdrant
+      - tei-embed
+      - tei-rerank
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+  tei-embed:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    command: ["--model-id", "${EMBED_MODEL}"]
+    ports:
+      - "127.0.0.1:8081:80"
+    volumes:
+      - hf-cache:/data
+    restart: unless-stopped
+
+  tei-rerank:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    command: ["--model-id", "${RERANK_MODEL}"]
+    ports:
+      - "127.0.0.1:8082:80"
+    volumes:
+      - hf-cache:/data
+    restart: unless-stopped
+
+  # 取り込みバッチ: docker compose --profile ingest run --rm ingest
+  ingest:
+    build: ./rag-api
+    profiles: ["ingest"]
+    command: ["python", "ingest.py"]
+    env_file: .env
+    volumes:
+      - ./documents:/data/documents:ro
+    depends_on:
+      - qdrant
+      - tei-embed
+
+volumes:
+  open-webui-data:
+  qdrant-data:
+  hf-cache:

@@ -1,0 +1,12 @@
+# 動作確認後は pip freeze でバージョンを固定すること
+fastapi
+uvicorn[standard]
+httpx
+langchain
+langchain-community
+langchain-openai
+langchain-huggingface
+langchain-qdrant
+langchain-text-splitters
+pypdf
+chardet

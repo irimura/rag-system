@@ -1,0 +1,11 @@
+# 動作確認後は pip freeze でバージョンを固定すること
+chainlit
+langchain
+langchain-community
+langchain-openai
+langchain-huggingface
+langchain-chroma
+langchain-text-splitters
+sentence-transformers
+pypdf
+chardet
