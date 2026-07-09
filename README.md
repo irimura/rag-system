@@ -153,6 +153,7 @@ flowchart LR
 3. **ハイブリッド検索** — 型番・製品名・略語などキーワード一致が重要なドメインでは BM25 併用が有効(案3)。
 4. **Embedding モデルの選定** — 日本語なら `multilingual-e5-large` / `bge-m3` / `ruri` 系。ベクトル DB より先にモデルを吟味する。
 5. **クエリ変換** — Multi-Query / HyDE で「質問文と文書の表現の乖離」を吸収。
+6. **日本語処理の作り込み** — NFKC + neologdn による表記ゆれ正規化、埋め込み・リランカーのトークン上限とチャンクサイズの整合(日本語は 1 文字 1〜2 トークン)、形態素解析(SudachiPy)ベースの BM25、同義語辞書。各構成要素の「日本語固有のポイント」参照。
 
 ---
 
@@ -173,7 +174,11 @@ flowchart LR
 | OpenSearch | ハイブリッド検索(案3) | Apache-2.0 |
 | pgvector / PostgreSQL | Vector store 代替 / メタデータ DB | PostgreSQL License |
 | rank_bm25 | Okapi BM25 実装(in-memory、`BM25Retriever` のバックエンド) | Apache-2.0 |
-| SudachiPy + SudachiDict | 日本語形態素解析(BM25 のトークナイズに使用) | Apache-2.0 |
+| SudachiPy + SudachiDict(+同義語辞書) | 日本語形態素解析(BM25 のトークナイズ・同義語展開) | Apache-2.0 |
+| neologdn | 日本語テキスト正規化(表記ゆれの吸収) | Apache-2.0 |
+| bunkai | 日本語文境界解析(チャンク分割の前処理) | Apache-2.0 |
+| PGroonga | PostgreSQL の日本語全文検索拡張(pgvector と併用でハイブリッド) | PostgreSQL License |
+| Tesseract OCR | スキャン文書の OCR(`jpn` / `jpn_vert` モデル) | Apache-2.0 |
 | Text Embeddings Inference (TEI) | Embedding / Rerank 配信 | Apache-2.0 |
 | sentence-transformers | Embedding / CrossEncoder(プロセス内) | Apache-2.0 |
 | Nginx | リバースプロキシ | BSD-2 |
