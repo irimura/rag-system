@@ -105,7 +105,9 @@ cd deploy/plan3
 
 # 1) OpenSearch のカーネル要件(必須。恒久化は /etc/sysctl.d/ に記載)
 sudo sysctl -w vm.max_map_count=262144
-echo "vm.max_map_count=262144" | sudo tee /etc/sysctl.d/99-opensearch.conf
+cat <<'EOF' | sudo tee /etc/sysctl.d/99-opensearch.conf
+vm.max_map_count=262144
+EOF
 
 # 2) TLS 証明書の配置(検証用は自己署名。本番は社内 CA / Let's Encrypt)
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
