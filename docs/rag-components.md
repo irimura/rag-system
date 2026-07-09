@@ -144,6 +144,34 @@ retriever = EnsembleRetriever(
     retrievers=[bm25_retriever, vector_retriever], weights=[0.4, 0.6])
 ```
 
+### BM25(Okapi BM25)の実装選択肢
+
+BM25 は製品ではなく**スコアリングアルゴリズム**(Okapi BM25)であり、どのレイヤーで持つかを規模と運用要件で選べる。
+
+| 実装 | 形態 | 規模目安 | 向くケース |
+|---|---|---|---|
+| rank_bm25(LangChain `BM25Retriever`) | in-memory ライブラリ | 〜数万チャンク | **案1/案2 のままサーバ追加なしでハイブリッド化を試す**最短ルート |
+| OpenSearch / Elasticsearch | 検索サーバ(Lucene の BM25) | 数百万チャンク〜 | 案3。kuromoji 日本語解析・永続化・レプリカ等の運用機能込み |
+| Milvus 2.5+ 内蔵 BM25 / Qdrant 疎ベクトル | Vector store 内蔵 | 中〜大規模 | 検索基盤を増やさず 1 つの DB でハイブリッドを完結させたい場合 |
+
+**`BM25Retriever` を日本語で使う場合は形態素解析が必須。** デフォルトのトークナイズは空白区切り(`str.split`)のため、分かち書きされない日本語ではほぼ機能しない。SudachiPy 等を `preprocess_func` に渡す:
+
+```python
+from langchain_community.retrievers import BM25Retriever
+from sudachipy import dictionary, tokenizer as sudachi_tokenizer
+
+_tok = dictionary.Dictionary().create()
+_mode = sudachi_tokenizer.Tokenizer.SplitMode.C
+
+def tokenize_ja(text: str) -> list[str]:
+    return [m.surface() for m in _tok.tokenize(text, _mode)]
+
+bm25_retriever = BM25Retriever.from_documents(
+    chunks, preprocess_func=tokenize_ja, k=20)
+```
+
+注意点: rank_bm25 は **in-memory** で、インデックスは永続化されず起動時に全チャンクから再構築される。チャンク数が数十万を超える、または増分更新・レプリカといった運用機能が必要になった時点で案3(OpenSearch)へ移行する。
+
 **精度向上のポイント**
 
 - **k は「Rerank 前提で広めに」**(20〜50)。Retriever 単独で絞り込もうとしない

@@ -61,7 +61,8 @@ flowchart LR
 | **LLM 推論** | 回答生成(稼働済み) | vLLM(OpenAI 互換エンドポイント) |
 | **Embedding** | テキストのベクトル化 | `multilingual-e5` / `BAAI/bge-m3` / `ruri` を sentence-transformers・TEI・Infinity・vLLM(`--runner pooling`)で配信 |
 | **検索 DB(Vector store)** | ベクトル(+全文)インデックスの保存・検索 | Chroma / Qdrant / pgvector / Milvus / OpenSearch |
-| **Retriever** | クエリに対する関連文書の取得戦略 | LangChain Retriever(similarity / MMR / Hybrid / Multi-Query 等) |
+| **キーワード検索(Okapi BM25)** | 字面一致に強い全文検索。ハイブリッド検索の片翼 | rank_bm25(`BM25Retriever`・in-memory)/ OpenSearch(Lucene BM25 + kuromoji)/ Milvus 2.5+ 内蔵 BM25 |
+| **Retriever** | クエリに対する関連文書の取得戦略 | LangChain Retriever(similarity / MMR / BM25 / Hybrid / Multi-Query 等) |
 | **Reranker** | 取得結果の再順位付けによる精度向上 | `BAAI/bge-reranker-v2-m3`(CrossEncoder / TEI rerank) |
 | **リバースプロキシ** | TLS 終端・ルーティング(案3) | Nginx / Caddy |
 | **メタデータ DB** | 会話履歴・ユーザー管理(案3) | PostgreSQL |
@@ -171,6 +172,8 @@ flowchart LR
 | Milvus | Vector store(案3 代替) | Apache-2.0 |
 | OpenSearch | ハイブリッド検索(案3) | Apache-2.0 |
 | pgvector / PostgreSQL | Vector store 代替 / メタデータ DB | PostgreSQL License |
+| rank_bm25 | Okapi BM25 実装(in-memory、`BM25Retriever` のバックエンド) | Apache-2.0 |
+| SudachiPy + SudachiDict | 日本語形態素解析(BM25 のトークナイズに使用) | Apache-2.0 |
 | Text Embeddings Inference (TEI) | Embedding / Rerank 配信 | Apache-2.0 |
 | sentence-transformers | Embedding / CrossEncoder(プロセス内) | Apache-2.0 |
 | Nginx | リバースプロキシ | BSD-2 |

@@ -140,4 +140,4 @@ WantedBy=multi-user.target
 ## この案から次へ進む判断基準
 
 - 同時利用者が増えて応答が遅くなった → **案2**(Embedding/Rerank をコンテナ分離)
-- キーワード検索の取りこぼしが目立つ → **案3**(ハイブリッド検索)
+- キーワード検索の取りこぼしが目立つ → まず **`BM25Retriever`(rank_bm25)+ `EnsembleRetriever` の追加**でハイブリッド化を試す(サーバ追加不要。[rag-components.md §5](rag-components.md) 参照)。それでも規模的に足りなければ **案3**

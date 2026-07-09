@@ -137,4 +137,5 @@ async def chat(req: ChatRequest):
 
 ## この案から次へ進む判断基準
 
-- 固有名詞・型番のキーワード検索を強化したい、文書が数百万チャンク規模 → **案3**
+- 固有名詞・型番のキーワード検索を強化したい → まず **RAG API コンテナ内に `BM25Retriever`(rank_bm25・in-memory)を追加**してハイブリッド化を試す(〜数万チャンク目安。日本語は SudachiPy でのトークナイズが必須。[rag-components.md §5](rag-components.md) 参照)
+- in-memory BM25 では足りない規模(数十万チャンク〜)、または全文検索の運用機能(増分更新・レプリカ)が必要 → **案3**
