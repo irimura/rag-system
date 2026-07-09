@@ -13,7 +13,7 @@
 ## 0. 前提条件
 
 - Node B: Ubuntu Server 22.04 / 24.04(RAM 目安 — 案1: 8GB〜 / 案2: 16GB〜 / 案3: 32GB〜)
-- Node A で vLLM が稼働済みで、Node B から HTTP 到達できること
+- Node A で vLLM が **OpenAI 互換エンドポイントとしてサービス化済み**で、Node B から HTTP 到達できること(未了の場合は先に [node-a-vllm.md](node-a-vllm.md) を実施)
 - インターネット接続(イメージ・モデルの初回ダウンロードに必要)
 
 ### 0.1 Docker のインストール(Node B)
@@ -28,9 +28,9 @@ docker version && docker compose version
 ### 0.2 Node A への疎通確認
 
 ```bash
-curl http://<node-a>:8080/v1/models
+curl http://<node-a>:8080/v1/models -H "Authorization: Bearer <VLLM_API_KEY>"
 # vLLM のモデル一覧(JSON)が返れば OK。返らない場合は Node A 側の
-# --host 0.0.0.0 起動と FW(8080/tcp)を確認する
+# サービス化(node-a-vllm.md)と FW(8080/tcp が Node B から許可)を確認する
 ```
 
 ### 0.3 リポジトリの配置と共通設定

@@ -1,0 +1,27 @@
+# Node A: vLLM OpenAI 互換サーバ(venv + systemd 方式の代替)
+# 配置: /etc/systemd/system/vllm.service
+# 前提: /opt/vllm/.venv に `pip install vllm` 済み、モデルは /opt/models 配下
+# ExecStart の <> 部分とAPI キーを実環境に合わせて書き換えること
+[Unit]
+Description=vLLM OpenAI-compatible API server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=vllm
+Group=vllm
+Environment=HF_HOME=/opt/vllm/hf-cache
+ExecStart=/opt/vllm/.venv/bin/vllm serve /opt/models/<your-hf-model> \
+    --served-model-name <your-hf-model-name> \
+    --host 0.0.0.0 \
+    --port 8080 \
+    --gpu-memory-utilization 0.90 \
+    --max-model-len 8192 \
+    --api-key <change-me>
+Restart=always
+RestartSec=10
+# 起動(モデルロード)に時間がかかるため余裕を持たせる
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

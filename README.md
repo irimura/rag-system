@@ -21,6 +21,7 @@
 | [docs/evaluation-spec.md](docs/evaluation-spec.md) | RAG 精度評価のテスト仕様書(指標定義・テスト観点 TC01〜TC10・実行手順・合否基準) |
 | [docs/test-data.md](docs/test-data.md) | テストデータ集(Vector store 投入用の公開コーパス・評価用 QA データセットへのリンク) |
 | [eval/golden_dataset.sample.jsonl](eval/golden_dataset.sample.jsonl) | ゴールデンデータセットのサンプル(テスト観点別 10 ケース) |
+| [docs/node-a-vllm.md](docs/node-a-vllm.md) | Node A 構築手順書(vLLM 同梱の OpenAI 互換サーバのサービス化 — Docker / systemd) |
 | [docs/deployment-guide.md](docs/deployment-guide.md) | Node B 構築手順書(案1〜案3 の構築・確認・運用・トラブルシューティング) |
 | [deploy/](deploy/) | 構築ファイル一式(案毎の Dockerfile / docker-compose.yml / .env.example / nginx conf / OpenSearch マッピング / アプリコード) |
 
