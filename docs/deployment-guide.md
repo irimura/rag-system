@@ -10,6 +10,8 @@
 
 > デバッグ用ポート(Qdrant 6333、TEI 8081/8082、rag-api 8000、OpenSearch 9200)は `127.0.0.1` バインドで外部非公開。Node A(vLLM)には一切手を入れません。
 
+> 以降のコマンド例中の `${node_a}` `${node_b}` `${node_b_ip}` `${node_b_hostname}` `${vllm_api_key}` `${repo_url}` `${n}`(構築する案番号 1/2/3)は、実行前に環境に応じた値に置き換えてください。
+
 ## 0. 前提条件
 
 - Node B: Ubuntu Server 22.04 / 24.04(RAM 目安 — 案1: 8GB〜 / 案2: 16GB〜 / 案3: 32GB〜)
@@ -28,7 +30,7 @@ docker version && docker compose version
 ### 0.2 Node A への疎通確認
 
 ```bash
-curl http://<node-a>:8080/v1/models -H "Authorization: Bearer <VLLM_API_KEY>"
+curl http://${node_a}:8080/v1/models -H "Authorization: Bearer ${vllm_api_key}"
 # vLLM のモデル一覧(JSON)が返れば OK。返らない場合は Node A 側の
 # サービス化(node-a-vllm.md)と FW(8080/tcp が Node B から許可)を確認する
 ```
@@ -36,11 +38,11 @@ curl http://<node-a>:8080/v1/models -H "Authorization: Bearer <VLLM_API_KEY>"
 ### 0.3 リポジトリの配置と共通設定
 
 ```bash
-git clone <this-repo> && cd rag-system/deploy/plan<N>
-cp .env.example .env
-vi .env    # 最低限 VLLM_BASE_URL / VLLM_MODEL を実環境に合わせる
-           # 案2/3 は WEBUI_SECRET_KEY(案3 は POSTGRES_PASSWORD も)を必ず変更:
-           #   openssl rand -hex 32
+git clone ${repo_url} && cd rag-system/deploy/plan${n}
+cp -v .env.example .env
+vim .env    # 最低限 VLLM_BASE_URL / VLLM_MODEL を実環境に合わせる
+            # 案2/3 は WEBUI_SECRET_KEY(案3 は POSTGRES_PASSWORD も)を必ず変更:
+            #   openssl rand -hex 32
 ```
 
 取り込みたい文書(PDF / Markdown / テキスト)を `documents/` に配置します。
@@ -66,7 +68,7 @@ docker compose logs -f chainlit-app     # "Your app is available" が出るま�
 curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000   # -> 200
 ```
 
-ブラウザで `http://<node-b>:8000` を開き、投入した文書について質問して回答と「参考資料」表示を確認します。
+ブラウザで `http://${node_b}:8000` を開き、投入した文書について質問して回答と「参考資料」表示を確認します。
 
 - 文書を追加・更新したら手順 2) を再実行(インデックスは Docker volume `chroma-data` に永続化)
 - 初回質問は rerank モデルのロードで数十秒かかることがある(2 回目以降は高速)
@@ -94,7 +96,7 @@ curl http://localhost:8000/v1/chat/completions \
   -d '{"model":"knowledge-rag","messages":[{"role":"user","content":"(文書に関する質問)"}]}'
 ```
 
-**Open WebUI の初期設定**: `http://<node-b>:3000` を開き、最初に作成したアカウントが管理者になります。`OPENAI_API_BASE_URL` で rag-api を接続済みのため、モデル一覧に `knowledge-rag`(`.env` の `RAG_MODEL_NAME`)が表示されればそれを選んで会話を開始できます。
+**Open WebUI の初期設定**: `http://${node_b}:3000` を開き、最初に作成したアカウントが管理者になります。`OPENAI_API_BASE_URL` で rag-api を接続済みのため、モデル一覧に `knowledge-rag`(`.env` の `RAG_MODEL_NAME`)が表示されればそれを選んで会話を開始できます。
 
 ## 3. 案3 の構築(Nginx + OpenSearch ハイブリッド + PostgreSQL)
 
@@ -108,7 +110,7 @@ echo "vm.max_map_count=262144" | sudo tee /etc/sysctl.d/99-opensearch.conf
 # 2) TLS 証明書の配置(検証用は自己署名。本番は社内 CA / Let's Encrypt)
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout nginx/certs/server.key -out nginx/certs/server.crt \
-  -subj "/CN=<node-b のホスト名>"
+  -subj "/CN=${node_b_hostname}"
 
 # 3) ビルドと起動(opensearch イメージは kuromoji プラグインを組み込みビルド)
 docker compose up -d --build
@@ -127,7 +129,7 @@ curl -s "http://localhost:9200/knowledge/_search" -H "Content-Type: application/
   -d '{"query":{"match":{"text":"(文書中のキーワード)"}},"size":3}'
 ```
 
-ブラウザで `https://<node-b>/` を開き(自己署名の場合は警告を承認)、管理者アカウントを作成して `knowledge-rag` モデルで会話します。会話履歴・ユーザー情報は PostgreSQL に保存されます。
+ブラウザで `https://${node_b}/` を開き(自己署名の場合は警告を承認)、管理者アカウントを作成して `knowledge-rag` モデルで会話します。会話履歴・ユーザー情報は PostgreSQL に保存されます。
 
 - `.env` の `OS_HEAP` は Node B の RAM に合わせる(RAM の 25〜50%、32GB 以下)
 - OpenSearch はセキュリティプラグイン無効(`DISABLE_SECURITY_PLUGIN=true`)の内部ネットワーク限定構成。9200 を外部公開する場合は必ず有効化し認証を設定する

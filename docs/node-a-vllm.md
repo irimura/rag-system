@@ -13,6 +13,8 @@ vLLM 本体に **OpenAI 互換 API サーバが同梱**されています(`vllm 
 
 どちらも同じ `vllm serve` を起動しているだけなので、後から方式を切り替えても Node B 側には影響しません(エンドポイント URL とモデル名が同じであればよい)。
 
+> 以降のコマンド例中の `${node_a}` `${node_b_ip}` `${vllm_api_key}` `${served_model_name}` は、実行前に環境に応じた値に置き換えてください。
+
 ## 1. Docker Compose 方式(推奨)
 
 ### 1.1 前提: NVIDIA Container Toolkit
@@ -36,8 +38,8 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 
 ```bash
 cd deploy/node-a
-cp .env.example .env
-vi .env   # MODELS_DIR / MODEL_PATH / SERVED_MODEL_NAME / VLLM_API_KEY を設定
+cp -v .env.example .env
+vim .env   # MODELS_DIR / MODEL_PATH / SERVED_MODEL_NAME / VLLM_API_KEY を設定
 
 docker compose up -d
 docker compose logs -f vllm   # "Application startup complete" が出るまで待つ(モデルロードに数分)
@@ -52,8 +54,8 @@ sudo -u vllm python3 -m venv /opt/vllm/.venv
 sudo -u vllm /opt/vllm/.venv/bin/pip install vllm   # CUDA 対応 wheel が入る
 
 # ユニットファイルを配置して ExecStart 内の <> を書き換え
-sudo cp deploy/node-a/vllm.service /etc/systemd/system/
-sudo vi /etc/systemd/system/vllm.service
+sudo cp -v deploy/node-a/vllm.service /etc/systemd/system/
+sudo vim /etc/systemd/system/vllm.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now vllm
 journalctl -u vllm -f
@@ -62,22 +64,22 @@ journalctl -u vllm -f
 ## 3. 動作確認
 
 ```bash
-# モデル一覧(SERVED_MODEL_NAME が返ること)
-curl http://<node-a>:8080/v1/models \
-  -H "Authorization: Bearer <VLLM_API_KEY>"
+# モデル一覧(${served_model_name} が返ること)
+curl http://${node_a}:8080/v1/models \
+  -H "Authorization: Bearer ${vllm_api_key}"
 
 # チャット補完
-curl http://<node-a>:8080/v1/chat/completions \
-  -H "Authorization: Bearer <VLLM_API_KEY>" \
+curl http://${node_a}:8080/v1/chat/completions \
+  -H "Authorization: Bearer ${vllm_api_key}" \
   -H "Content-Type: application/json" \
-  -d '{"model":"<SERVED_MODEL_NAME>","messages":[{"role":"user","content":"こんにちは"}]}'
+  -d "{\"model\":\"${served_model_name}\",\"messages\":[{\"role\":\"user\",\"content\":\"こんにちは\"}]}"
 ```
 
 Node B 側は各案の `.env` で以下を一致させます。
 
 | Node B(.env) | Node A の設定 |
 |---|---|
-| `VLLM_BASE_URL=http://<node-a>:8080/v1` | ポート公開(Docker 版は 8080→8000 をマップ済み) |
+| `VLLM_BASE_URL=http://${node_a}:8080/v1` | ポート公開(Docker 版は 8080→8000 をマップ済み) |
 | `VLLM_MODEL` | `SERVED_MODEL_NAME` |
 | `VLLM_API_KEY` | `VLLM_API_KEY`(`--api-key`) |
 
@@ -98,7 +100,7 @@ Node B 側は各案の `.env` で以下を一致させます。
 - ファイアウォールで 8080/tcp を **Node B からのみ許可**する:
 
 ```bash
-sudo ufw allow from <node-b-ip> to any port 8080 proto tcp
+sudo ufw allow from ${node_b_ip} to any port 8080 proto tcp
 sudo ufw deny 8080/tcp
 ```
 
