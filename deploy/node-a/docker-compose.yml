@@ -1,6 +1,7 @@
 # Node A: vLLM OpenAI 互換サーバ(推奨方式)
-# 手順: docs/node-a-vllm.md
-# 前提: NVIDIA ドライバ + NVIDIA Container Toolkit 導入済み
+# 使い方: cp -v .env.example .env で設定後、docker compose up -d
+# 前提: NVIDIA ドライバ(CUDA 12.8 対応)+ NVIDIA Container Toolkit 導入済み
+#       (Deep Learning Base OSS Nvidia Driver GPU AMI なら導入済み。docs/node-specs.md 参照)
 services:
   vllm:
     image: vllm/vllm-openai:latest
