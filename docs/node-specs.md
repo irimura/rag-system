@@ -73,9 +73,11 @@ GPU インスタンスの選定は、次の順で絞り込みます。
 
 | 案 | 最小(検証) | 推奨(常用) | 備考 |
 |---|---|---|---|
-| 案1 | t3.large(2vCPU/8GB) | m7i.xlarge(4vCPU/16GB) | embedding/rerank がプロセス内 CPU 実行のため vCPU 多めが快適 |
-| 案2 | m7i.xlarge(4vCPU/16GB) | m7i.2xlarge(8vCPU/32GB) | TEI ×2 + Qdrant + WebUI |
-| 案3 | r7i.xlarge(4vCPU/32GB) | **r7i.2xlarge(8vCPU/64GB)** | OpenSearch の JVM ヒープ(`OS_HEAP`)+ヒープ外メモリでメモリ優先型(r 系)が適する |
+| 案1 | t3.large(2vCPU/8GB)<br>常時 約 12,700 円 / 160h 約 2,800 円 | m7i.xlarge(4vCPU/16GB)<br>常時 約 30,400 円 / 160h 約 6,700 円 | embedding/rerank がプロセス内 CPU 実行のため vCPU 多めが快適 |
+| 案2 | m7i.xlarge(4vCPU/16GB)<br>常時 約 30,400 円 / 160h 約 6,700 円 | m7i.2xlarge(8vCPU/32GB)<br>常時 約 60,800 円 / 160h 約 13,300 円 | TEI ×2 + Qdrant + WebUI |
+| 案3 | r7i.xlarge(4vCPU/32GB)<br>常時 約 37,300 円 / 160h 約 8,200 円 | **r7i.2xlarge(8vCPU/64GB)**<br>常時 約 74,600 円 / 160h 約 16,300 円 | OpenSearch の JVM ヒープ(`OS_HEAP`)+ヒープ外メモリでメモリ優先型(r 系)が適する |
+
+> 月額は §5 と同一根拠(東京リージョン・Linux オンデマンド・1USD=160JPY、常時稼働 730h / 日中帯 160h)。EC2 インスタンス費のみで EBS 等は別途。
 
 - m7i/r7i(Intel)は例示です。同世代の AMD(m7a/r7a)は同スペックでやや安価なので、リージョンの提供状況と単価で選んで構いません
 - **ARM(Graviton, m7g/r7g)は避けてください**。本構成のコンテナイメージ(TEI CPU 版等)は x86_64 前提で検証しているため
