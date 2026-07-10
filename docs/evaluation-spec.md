@@ -114,6 +114,8 @@ flowchart LR
 
 ## 5. 実行手順
 
+> 本節は手順の設計を示す。**実際に手を動かす際の手順書とスクリプトは [test/](../test/) を参照**(レベル1: [test/level1/procedure.md](../test/level1/procedure.md)、レベル2: [test/level2/procedure.md](../test/level2/procedure.md)、観点別: [test/cases/](../test/cases/))。
+
 ### 5.1 環境の固定(再現性の確保)
 
 評価前に以下を記録・固定する。1 つでも変えたら「別の実験」として記録する。
