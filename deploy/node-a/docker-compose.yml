@@ -5,6 +5,8 @@
 services:
   vllm:
     image: vllm/vllm-openai:latest
+    # イメージの ENTRYPOINT (python3 -m vllm.entrypoints.openai.api_server) に
+    # 以下のオプションが引数として渡され、OpenAI 互換 API サーバが起動する
     command:
       - --model
       - ${MODEL_PATH}
