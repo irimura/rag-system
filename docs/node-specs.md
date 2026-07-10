@@ -15,32 +15,47 @@
 
 ## 1. Node A(GPU ノード)の選定
 
-### 1.1 選定基準
+### 1.1 要求スペック(確定要件)
+
+利用する vLLM の要件として以下が確定しています。
+
+| 項目 | 要件 |
+|---|---|
+| GPU 世代 | **Ampere 世代以降**(Compute Capability 8.0 以上。A100 / A10 / L4 / L40S / H100 等が該当) |
+| VRAM | **40GB 以上** |
+| CUDA | **12.8 対応**(NVIDIA Driver は 570 系以降) |
+| 必須ソフトウェア | **NVIDIA Driver** / **NVIDIA Container Toolkit**(Docker 方式で vLLM を動かすため) |
+
+- ソフトウェア要件は後述の Deep Learning Base OSS Nvidia Driver GPU AMI で充足できる(§1.4)。導入済みドライバが CUDA 12.8 に対応しているかは、AMI のリリースノートと起動後の `nvidia-smi`(右上の CUDA Version 表示が 12.8 以上)で確認する
+- venv + systemd 方式([node-a-vllm.md](node-a-vllm.md) §2)を採る場合、NVIDIA Container Toolkit は不要(Driver のみ必須)
+
+### 1.2 選定基準
 
 GPU インスタンスの選定は、次の順で絞り込みます。
 
-1. **GPU の VRAM が決定打**(vCPU/RAM は二の次)。要件の VRAM 40GB 以上を**単一 GPU** で満たせるファミリーを選ぶ。複数 GPU の合算でも `--tensor-parallel-size` で動くが、通信オーバーヘッドと運用の複雑さが増すため、載るなら 1 枚に載せるのが基本
+1. **GPU 世代と VRAM が決定打**(vCPU/RAM は二の次)。Ampere 以降かつ VRAM 40GB 以上を**単一 GPU** で満たせるファミリーを選ぶ。複数 GPU の合算でも `--tensor-parallel-size` で動くが、通信オーバーヘッドと運用の複雑さが増すため、載るなら 1 枚に載せるのが基本
 2. **ホスト RAM はモデルサイズ以上**を確保する(モデルロード時に読み込むため。VRAM 40GB を使い切るモデルならホスト RAM 64GB が安全)
 3. vCPU はトークナイズ・前処理程度なので 4〜8 で足りる
 4. 推論はネットワーク負荷が小さいので帯域は既定で十分
 
-### 1.2 候補の比較(2026-07 時点)
+### 1.3 候補の比較(2026-07 時点)
 
-| Instance Type | GPU | VRAM | vCPU / RAM | 判定 |
+| Instance Type | GPU(世代) | VRAM | vCPU / RAM | 判定 |
 |---|---|---|---|---|
-| **g6e.xlarge** | L40S ×1 | **48GB** | 4 / 32GB | ○ 最小構成(コスト優先) |
-| **g6e.2xlarge** | L40S ×1 | **48GB** | 8 / 64GB | **◎ 推奨**(ホスト RAM に余裕) |
-| g6.xlarge / g5.xlarge | L4 / A10G ×1 | 24GB | - | × VRAM 不足(40GB 未満) |
+| **g6e.xlarge** | L40S ×1(Ada Lovelace = Ampere より後) | **48GB** | 4 / 32GB | ○ 最小構成(コスト優先) |
+| **g6e.2xlarge** | L40S ×1(同上) | **48GB** | 8 / 64GB | **◎ 推奨**(ホスト RAM に余裕) |
+| g5.xlarge | A10G ×1(Ampere) | 24GB | - | × 世代は満たすが VRAM 不足 |
+| g6.xlarge | L4 ×1(Ada Lovelace) | 24GB | - | × VRAM 不足 |
 | g6e.12xlarge | L40S ×4 | 192GB | 48 / 384GB | △ 70B 級 bf16 等、1 枚に載らない場合のみ(`--tensor-parallel-size 4`) |
-| p4d / p5 系 | A100 / H100 ×8 | 320GB〜 | - | × 本用途にはオーバースペック(8 GPU 固定で高額) |
+| p4d / p5 系 | A100(Ampere)/ H100(Hopper)×8 | 320GB〜 | - | × 要件は満たすが 8 GPU 固定で本用途にはオーバースペック |
 
-- **g6e ファミリー(NVIDIA L40S 48GB/GPU)が「単一 GPU で 40GB+」を満たす最も経済的な選択肢**です。同じ 1 GPU なら xlarge / 2xlarge / 4xlarge の VRAM は同じ 48GB で、差は vCPU / ホスト RAM のみ
+- **g6e ファミリー(NVIDIA L40S 48GB/GPU、Ada Lovelace 世代)が「Ampere 以降 + 単一 GPU で 40GB+」を満たす最も経済的な選択肢**です。L40S は CUDA 12.8 対応です。同じ 1 GPU なら xlarge / 2xlarge / 4xlarge の VRAM は同じ 48GB で、差は vCPU / ホスト RAM のみ
 - g6e.xlarge(ホスト RAM 32GB)は、VRAM 40GB を使い切るサイズのモデルをロードする際にホスト RAM が窮屈になり得るため、**g6e.2xlarge を推奨**とします。まず xlarge で始めて、ロード時のメモリ不足やスワップが出たら 2xlarge に上げる進め方でも問題ありません
 - 料金は変動するため、確定時に [EC2 オンデマンド料金表](https://aws.amazon.com/ec2/pricing/on-demand/) で対象リージョンの単価を確認してください。検証フェーズは停止(EBS のみ課金)をこまめに行うとコストを抑えられます
 
-### 1.3 AMI
+### 1.4 AMI
 
-**Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04)** — ご想定の名称で正しく、G6e をサポート対象に含みます。NVIDIA ドライバ・CUDA・**Docker・NVIDIA Container Toolkit が導入済み**のため、[node-a-vllm.md](node-a-vllm.md) §1.1(Toolkit 導入)は**スキップ**できます。
+**Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04)** — ご想定の名称で正しく、G6e をサポート対象に含みます。§1.1 の必須ソフトウェア(NVIDIA Driver・**Docker・NVIDIA Container Toolkit**)が導入済みのため、[node-a-vllm.md](node-a-vllm.md) §1.1(Toolkit 導入)は**スキップ**できます。最新版 AMI のドライバが CUDA 12.8 に対応していることをリリースノートで確認して選択してください。
 
 - 「Base」が付かない DLAMI(PyTorch 入り等)はフレームワーク同梱で大きいだけなので不要。vLLM はコンテナ(または venv)で導入するため Base で十分
 - カーネルの自動更新はドライバ互換性を壊すことがあるため、AMI のガイダンスに従いセキュリティパッチ以外のカーネル更新は避ける

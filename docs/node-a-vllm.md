@@ -15,6 +15,14 @@ vLLM 本体に **OpenAI 互換 API サーバが同梱**されています(`vllm 
 
 > 以降のコマンド例中の `${node_a}` `${node_b_ip}` `${vllm_api_key}` `${served_model_name}` は、実行前に環境に応じた値に置き換えてください。
 
+## 0. 前提: GPU 要求スペック
+
+利用する vLLM の確定要件(詳細とインスタンス選定は [node-specs.md](node-specs.md) §1):
+
+- GPU: **Ampere 世代以降(Compute Capability 8.0+)・VRAM 40GB 以上**
+- NVIDIA Driver: **CUDA 12.8 対応版(570 系以降)** — `nvidia-smi` の CUDA Version 表示が 12.8 以上であること
+- **NVIDIA Container Toolkit**(§1 の Docker 方式で必須。§2 の venv + systemd 方式では不要)
+
 ## 1. Docker Compose 方式(推奨)
 
 ### 1.1 前提: NVIDIA Container Toolkit

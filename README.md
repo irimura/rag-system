@@ -2,7 +2,9 @@
 
 - 対象環境: Ubuntu Server(オンプレミス / 自宅サーバ / VPS 等)
 - 前提: Hugging Face 形式のモデルを **vLLM** で稼働済み(OpenAI 互換 API)
-  - vLLM の要求スペック: **GPU VRAM 40GB 以上**(推論専用の GPU ノードとして扱う)
+  - vLLM の要求スペック(GPU): **Ampere 世代以降・VRAM 40GB 以上・CUDA 12.8 対応**
+  - vLLM の要求スペック(ソフトウェア): **NVIDIA Driver(CUDA 12.8 対応版)+ NVIDIA Container Toolkit**
+  - 上記要件を満たす推論専用の GPU ノード(Node A)として扱う
 - 方針:
   - **すべて無償の OSS** で構成する(ライセンス一覧は末尾参照)
   - **クラウド固有のマネージドサービスは使用しない**(全コンポーネントをセルフホスト)
