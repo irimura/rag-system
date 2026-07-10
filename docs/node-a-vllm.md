@@ -19,6 +19,8 @@ vLLM 本体に **OpenAI 互換 API サーバが同梱**されています(`vllm 
 
 ### 1.1 前提: NVIDIA Container Toolkit
 
+> AWS EC2 で **Deep Learning Base OSS Nvidia Driver GPU AMI** を使う場合([node-specs.md](node-specs.md))、ドライバ・Docker・NVIDIA Container Toolkit は導入済みのため本節はスキップして §1.2 へ進む。
+
 ```bash
 # NVIDIA ドライバ導入済みであること(nvidia-smi が動くこと)を確認してから:
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \

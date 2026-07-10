@@ -14,7 +14,7 @@
 
 ## 0. 前提条件
 
-- Node B: Ubuntu Server 22.04 / 24.04(RAM 目安 — 案1: 8GB〜 / 案2: 16GB〜 / 案3: 32GB〜)
+- Node B: Ubuntu Server 22.04 / 24.04(RAM 目安 — 案1: 8GB〜 / 案2: 16GB〜 / 案3: 32GB〜)。AWS EC2 で構築する場合の Instance Type / AMI 選定は [node-specs.md](node-specs.md) を参照
 - Node A で vLLM が **OpenAI 互換エンドポイントとしてサービス化済み**で、Node B から HTTP 到達できること(未了の場合は先に [node-a-vllm.md](node-a-vllm.md) を実施)
 - インターネット接続(イメージ・モデルの初回ダウンロードに必要)
 
