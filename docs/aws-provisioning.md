@@ -20,16 +20,18 @@ AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化す�
 - **単一サブネット**: 4 ノードすべてを 1 つのプライベートサブネット(192.168.0.0/26)に収容する
 - **NAT Gateway は必要時のみ**: 定常運用ではインターネット不要(モデル・イメージは AMI/EBS に取得済み、利用者は VPN 等の閉域から WebUI へ)。パッケージ取得やモデルダウンロードが必要なセットアップ時だけ NAT を作成し、AMI 化後に削除する
   - NAT Gateway は IGW へ抜ける**専用のパブリックサブネット**に置く必要があり、ワークロード用サブネットには同居できない。そのため NAT 用の一時サブネット(192.168.0.64/28)を NAT と同じライフサイクルで作成・削除する(ワークロードは常に単一サブネットのまま)
-- **シェルアクセスは SSM Session Manager**: プライベート運用のためインバウンド SSH を開けず、AWS Systems Manager 経由で接続する(NAT 稼働中に到達可能。§0.4)
+- **シェルアクセスは EC2 Instance Connect Endpoint(EICE)**: プライベート運用のためインバウンド SSH を外部へ開けず、VPC 内の EICE 経由で接続する。パブリック IP・踏み台・NAT を必要とせず、**NAT 削除後の隔離状態でも接続できる**(EICE 自体は無料。§1.4)
 - すべてのリソースに `Project` タグを付け、削除時はタグで特定する
 
 ### ネットワーク構成図
 
 ```mermaid
 flowchart TB
+    ADMIN["管理者端末<br/>aws ec2-instance-connect"]
     IGW["Internet Gateway"]
     subgraph vpc["VPC 192.168.0.0/24"]
         subgraph snet["subnet 192.168.0.0/26(プライベート・常設)"]
+            EICE["EC2 Instance Connect<br/>Endpoint(常設・無料)"]
             A["llm-001<br/>192.168.0.10"]
             B1["app-001<br/>192.168.0.21"]
             B2["app-002<br/>192.168.0.22"]
@@ -40,11 +42,13 @@ flowchart TB
             NAT["NAT Gateway + EIP"]
         end
     end
+    ADMIN -->|"SSH over EICE(22)"| EICE
+    EICE --> A & B1 & B2 & B3
     NAT --> IGW
     snet -.->|"0.0.0.0/0(NAT 稼働時のみ)"| NAT
 ```
 
-> 以降のコマンド中の変数は §0.2 で定義する。`${admin_cidr}` 等の環境依存値は自分の環境に合わせて編集すること。
+> 以降のコマンド中の変数は §0.2 で定義する。`${user_cidr}` 等の環境依存値は自分の環境に合わせて編集すること。
 
 ---
 
@@ -53,9 +57,9 @@ flowchart TB
 ### 0.1 AWS CLI / 権限
 
 ```bash
-aws --version                 # aws-cli/2.x
-aws sts get-caller-identity   # 認証確認(EC2/VPC/IAM 操作権限が必要)
-# SSM 接続にはローカルへ Session Manager plugin の導入も必要
+aws --version                 # aws-cli/2.x(EICE 接続に v2 が必要)
+aws sts get-caller-identity   # 認証確認(EC2/VPC 操作権限が必要)
+# EICE 接続には操作者 IAM に ec2-instance-connect:OpenTunnel / ec2:DescribeInstanceConnectEndpoints 等が必要
 ```
 
 ### 0.2 共通変数(コピーして値を編集)
@@ -67,7 +71,7 @@ project=rag-system
 az=ap-northeast-1a
 
 # --- アクセス許可元(必ず自環境に合わせる)---
-admin_cidr=203.0.113.10/32     # 管理端末のグローバル IP(将来の踏み台/SSH 用。SSM のみなら未使用)
+# シェル接続は EICE 経由のため外部 SSH 許可元(admin_cidr)は不要
 user_cidr=192.168.0.0/24       # WebUI 利用者ネットワーク(VPN/閉域の CIDR)
 
 # --- ネットワーク ---
@@ -100,7 +104,7 @@ ubuntu_name='ubuntu/images/hvm-ssd*/ubuntu-noble-24.04-amd64-server-*'
 dlami_owner=amazon
 dlami_name='Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04)*'
 
-# --- キーペア(SSM 主体だが SSH 併用に備え作成)---
+# --- キーペア(EICE のトンネル接続で使用)---
 key_name=${project}-key
 ```
 
@@ -122,31 +126,12 @@ aws ec2 create-key-pair --key-name $key_name --query 'KeyMaterial' --output text
 chmod -c 400 ${key_name}.pem
 ```
 
-### 0.4 SSM 用 IAM ロール(初回のみ)
+### 0.4 シェルアクセス方式(EC2 Instance Connect Endpoint)
 
-プライベートインスタンスへは SSM Session Manager で接続する。そのための最小ロールを作成する。
+プライベートインスタンスへは **EICE** で接続する。EICE は VPC 内に置く接続用リソースで、インスタンスの外向き通信(SSM のような Agent → サービス到達)に依存しないため、**NAT を削除した隔離状態でも接続できる**。インスタンス側の IAM ロールも不要。
 
-```bash
-cat > ssm-trust.json <<'EOF'
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    { "Effect": "Allow",
-      "Principal": { "Service": "ec2.amazonaws.com" },
-      "Action": "sts:AssumeRole" }
-  ]
-}
-EOF
-
-aws iam create-role --role-name ${project}-ssm --assume-role-policy-document file://ssm-trust.json
-aws iam attach-role-policy --role-name ${project}-ssm --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
-aws iam create-instance-profile --instance-profile-name ${project}-ssm
-aws iam add-role-to-instance-profile --instance-profile-name ${project}-ssm --role-name ${project}-ssm
-
-rm -v ssm-trust.json
-```
-
-> SSM は NAT 稼働中(§3)にインスタンスから SSM エンドポイントへ到達できるときに接続可能。NAT 削除後も恒久的にシェル接続したい場合は、VPC インターフェイスエンドポイント(ssm / ssmmessages / ec2messages)を追加するか、保守時に NAT を再作成する。
+- 実体の作成はサブネット作成後に行うため **§1.4** に置く(接続例も §1.4)
+- 課金: EICE 自体は無料(データ転送のみ)。SSM のように VPC インターフェイスエンドポイントを常設する必要がない
 
 ---
 
@@ -170,16 +155,13 @@ aws ec2 associate-route-table --route-table-id $rtb_id --subnet-id $subnet_id
 
 ### 1.2 Security Group(EC2 インスタンス向け・単一)
 
-内部通信は同一 SG 内を全許可(Node B → Node A:8080 等を包含)、外部からは SSH と WebUI のみ許可する。
+内部通信は同一 SG 内を全許可(Node B → Node A:8080 等を包含)、外部からは WebUI のみ許可する。22 番(SSH)は外部へ開けず、§1.4 で EICE の SG からのみ許可する。
 
 ```bash
 sg_id=$(aws ec2 create-security-group --group-name ${project}-ec2 --description "RAG EC2 instances" --vpc-id $vpc_id --tag-specifications "ResourceType=security-group,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-ec2-sg}]" --query 'GroupId' --output text)
 
 # ノード間通信(同一 SG からの全通信を許可)
 aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol -1 --source-group $sg_id
-
-# SSH(管理元のみ。踏み台/SSH を使う場合に有効。SSM のみなら不要)
-aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr $admin_cidr
 
 # WebUI(利用者ネットワークのみ): 案1=8000 / 案2=3000 / 案3=443
 aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 8000 --cidr $user_cidr
@@ -202,7 +184,6 @@ EOF
     --image-id "$ami" \
     --instance-type "$itype" \
     --key-name "$key_name" \
-    --iam-instance-profile "Name=${project}-ssm" \
     --subnet-id "$subnet_id" \
     --security-group-ids "$sg_id" \
     --private-ip-address "$private_ip" \
@@ -224,17 +205,42 @@ rm -v user-data-*.sh
 echo "llm-001=$llm_id app-001=$app1_id app-002=$app2_id app-003=$app3_id"
 ```
 
-この時点ではインターネット未接続(隔離)。パッケージ取得・モデル DL のため §3 で NAT を作成してからセットアップ([deployment-guide.md](deployment-guide.md))を行う。
+この時点ではインターネット未接続(隔離)。シェル接続は §1.4 の EICE で行う(NAT 不要)。パッケージ取得・モデル DL には**インスタンス自身の外向き通信**が要るため、§2 で NAT を作成してからセットアップ([deployment-guide.md](deployment-guide.md))を行う。
 
-接続(SSM):
+### 1.4 EC2 Instance Connect Endpoint(EICE)+ 接続
+
+EICE をワークロードサブネットに 1 つ作成すれば、全ノードへプライベート接続できる。NAT の有無に関わらず接続でき、定常運用(隔離状態)の保守にも使える。
 
 ```bash
-aws ssm start-session --target $llm_id
+# EICE 用 SG(インスタンスの 22 番へ出られればよい。インバウンドルールは不要)
+eice_sg_id=$(aws ec2 create-security-group --group-name ${project}-eice --description "EIC Endpoint" --vpc-id $vpc_id --tag-specifications "ResourceType=security-group,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-eice-sg}]" --query 'GroupId' --output text)
+
+# EICE をワークロードサブネットに作成(--no-preserve-client-ip で送信元を EICE の ENI に固定=下の SG ルールが効く)
+eice_id=$(aws ec2 create-instance-connect-endpoint --subnet-id $subnet_id --security-group-ids $eice_sg_id --no-preserve-client-ip --tag-specifications "ResourceType=instance-connect-endpoint,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-eice}]" --query 'InstanceConnectEndpoint.InstanceConnectEndpointId' --output text)
+
+# インスタンス SG に「EICE SG からの 22 番」を許可
+aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --source-group $eice_sg_id
+
+# 作成完了まで数分。State が create-complete を返すまで繰り返し確認する(専用 waiter なし)
+aws ec2 describe-instance-connect-endpoints --instance-connect-endpoint-ids $eice_id --query 'InstanceConnectEndpoints[0].State' --output text
+```
+
+接続方法は 2 通り。DLAMI などパッケージ有無が不確実なノードは方法 A を使う。
+
+```bash
+# 方法A: トンネル + 自分のキーペア(全ノードで確実)
+aws ec2-instance-connect open-tunnel --instance-id $llm_id --local-port 5222 &
+ssh -i ${key_name}.pem -p 5222 ubuntu@localhost
+
+# 方法B: ワンショット(ec2-instance-connect パッケージ入りの Ubuntu 公式 AMI 向け。一時鍵を自動 push)
+aws ec2-instance-connect ssh --instance-id $app1_id --os-user ubuntu --connection-type eice
 ```
 
 ---
 
 ## 2. NAT Gateway — 必要時のみ(作成 → 使用後削除)
+
+> シェル接続は EICE(§1.4)で完結し NAT を必要としない。NAT が要るのは**インスタンス自身の外向き通信**(パッケージ・モデルの取得)のみで、取得が済めば §2.2 で削除してよい。
 
 ### 2.1 作成
 
@@ -281,7 +287,7 @@ aws ec2 delete-subnet --subnet-id $nat_subnet_id
 
 ```bash
 # AMI 化する対象(例: app-002)
-src_id="${app2_id}""
+src_id="${app2_id}"
 ami_name="${project}-app-002-$(date +%Y%m%d)"
 
 aws ec2 stop-instances --instance-ids $src_id
@@ -333,7 +339,9 @@ echo "relaunched $target_hostname as $new_instance_type: $new_id"
 ```bash
 vpc_id=$(aws ec2 describe-vpcs --filters "Name=tag:Project,Values=$project" --query 'Vpcs[0].VpcId' --output text)
 subnet_id=$(aws ec2 describe-subnets --filters "Name=tag:Project,Values=$project" "Name=tag:Name,Values=$project-subnet" --query 'Subnets[0].SubnetId' --output text)
-sg_id=$(aws ec2 describe-security-groups --filters "Name=tag:Project,Values=$project" --query 'SecurityGroups[0].GroupId' --output text)
+sg_id=$(aws ec2 describe-security-groups --filters "Name=tag:Project,Values=$project" "Name=tag:Name,Values=$project-ec2-sg" --query 'SecurityGroups[0].GroupId' --output text)
+eice_sg_id=$(aws ec2 describe-security-groups --filters "Name=tag:Project,Values=$project" "Name=tag:Name,Values=$project-eice-sg" --query 'SecurityGroups[0].GroupId' --output text)
+eice_id=$(aws ec2 describe-instance-connect-endpoints --filters "Name=tag:Project,Values=$project" --query 'InstanceConnectEndpoints[0].InstanceConnectEndpointId' --output text)
 igw_id=$(aws ec2 describe-internet-gateways --filters "Name=tag:Project,Values=$project" --query 'InternetGateways[0].InternetGatewayId' --output text)
 rtb_id=$(aws ec2 describe-route-tables --filters "Name=tag:Project,Values=$project" "Name=tag:Name,Values=$project-rtb" --query 'RouteTables[0].RouteTableId' --output text)
 instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Project,Values=$project" "Name=instance-state-name,Values=pending,running,stopped,stopping" --query 'Reservations[].Instances[].InstanceId' --output text)
@@ -341,29 +349,35 @@ instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Project,Values=$pr
 
 ### 5.2 削除順序
 
-依存関係のため、インスタンス → (NAT) → SG → サブネット → ルートテーブル → IGW → VPC の順で削除する。
+依存関係のため、インスタンス → EICE → (NAT) → SG → サブネット → ルートテーブル → IGW → VPC の順で削除する。
 
 ```bash
 # 1) インスタンス(ENI 解放まで待つ)
 aws ec2 terminate-instances --instance-ids $instance_ids
 aws ec2 wait instance-terminated --instance-ids $instance_ids
 
-# 2) NAT が残っていれば §2.2 を先に実施
+# 2) EICE(サブネットの ENI を解放。削除完了まで数分。専用 waiter なし)
+aws ec2 delete-instance-connect-endpoint --instance-connect-endpoint-id $eice_id
+# State が返らなく(削除完了)なるまで確認する
+aws ec2 describe-instance-connect-endpoints --instance-connect-endpoint-ids $eice_id --query 'InstanceConnectEndpoints[0].State' --output text
 
-# 3) Security Group(既定 SG は VPC 削除時に自動消滅)
+# 3) NAT が残っていれば §2.2 を先に実施
+
+# 4) Security Group(インスタンス SG → EICE SG の順。既定 SG は VPC 削除時に自動消滅)
 aws ec2 delete-security-group --group-id $sg_id
+aws ec2 delete-security-group --group-id $eice_sg_id
 
-# 4) サブネット(関連付けも解除される)
+# 5) サブネット(関連付けも解除される)
 aws ec2 delete-subnet --subnet-id $subnet_id
 
-# 5) ルートテーブル(メインは不可。カスタムのみ)
+# 6) ルートテーブル(メインは不可。カスタムのみ)
 aws ec2 delete-route-table --route-table-id $rtb_id
 
-# 6) IGW(デタッチ後に削除)
+# 7) IGW(デタッチ後に削除)
 aws ec2 detach-internet-gateway --internet-gateway-id $igw_id --vpc-id $vpc_id
 aws ec2 delete-internet-gateway --internet-gateway-id $igw_id
 
-# 7) VPC
+# 8) VPC
 aws ec2 delete-vpc --vpc-id $vpc_id
 ```
 
@@ -379,13 +393,9 @@ snap_id=$(aws ec2 describe-images --image-ids $image_id --query 'Images[0].Block
 # キーペア
 aws ec2 delete-key-pair --key-name $key_name
 rm -v ${key_name}.pem
-
-# IAM(他で使っていなければ)
-aws iam remove-role-from-instance-profile --instance-profile-name ${project}-ssm --role-name ${project}-ssm
-aws iam delete-instance-profile --instance-profile-name ${project}-ssm
-aws iam detach-role-policy --role-name ${project}-ssm --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
-aws iam delete-role --role-name ${project}-ssm
 ```
+
+> EICE 方式ではインスタンス IAM ロールを作らないため、IAM の後片付けは不要。
 
 ---
 
@@ -393,21 +403,21 @@ aws iam delete-role --role-name ${project}-ssm
 
 ```mermaid
 flowchart LR
-    N["1. ネットワーク+SG+EC2 作成<br/>(§1)"] --> NAT1["2. NAT 作成<br/>(§2.1)"]
-    NAT1 --> S["3. SSM 接続しセットアップ<br/>(deployment-guide.md)"]
+    N["1. ネットワーク+SG+EC2+EICE 作成<br/>(§1)"] --> NAT1["2. NAT 作成<br/>(§2.1)"]
+    NAT1 --> S["3. EICE 接続しセットアップ<br/>(deployment-guide.md)"]
     S --> AMI["4. AMI 化<br/>(§3)"]
     AMI --> NAT2["5. NAT 削除<br/>(§2.2)"]
-    NAT2 --> RUN["6. 定常運用<br/>(隔離・WebUI は閉域から)"]
-    RUN -.->|"保守・タイプ変更時"| NAT1
+    NAT2 --> RUN["6. 定常運用<br/>(隔離・保守は EICE で随時)"]
+    RUN -.->|"ダウンロードを伴う保守時のみ"| NAT1
     RUN -.->|"タイプ変更"| CH["AMI から再作成<br/>(§4)"]
 ```
 
-1. **§1** ネットワーク・SG・EC2 を作成(この時点は隔離)
-2. **§2.1** NAT を作成して外向き通信を開通
-3. SSM で各ノードへ接続し、[deployment-guide.md](deployment-guide.md) に従いセットアップ(Docker/イメージ/モデル取得)
+1. **§1** ネットワーク・SG・EC2・EICE を作成(この時点は隔離だが EICE で接続可能)
+2. **§2.1** NAT を作成して外向き通信を開通(パッケージ・モデル取得用)
+3. EICE で各ノードへ接続し、[deployment-guide.md](deployment-guide.md) に従いセットアップ(Docker/イメージ/モデル取得)
 4. **§3** 各ノードを AMI 化(復旧・複製用のゴールデンイメージ)
 5. **§2.2** NAT を削除(課金停止・隔離へ)
-6. 定常運用。**タイプ変更や保守が必要になったら §2.1 で NAT を一時復活**、タイプ変更は **§4**(AMI から別タイプで再作成)
+6. 定常運用(隔離)。**シェル保守は EICE で随時可能**(NAT 不要)。パッケージ・モデルの再取得を伴う作業のときだけ §2.1 で NAT を一時復活する。Instance Type 変更は **§4**(AMI から別タイプで再作成)
 
 ## 付録: コスト注意
 

@@ -25,7 +25,7 @@
 | [eval/golden_dataset.sample.jsonl](eval/golden_dataset.sample.jsonl) | ゴールデンデータセットのサンプル(テスト観点別 10 ケース) |
 | [test/](test/) | 評価の実行手順書(レベル1/レベル2 の手順 + 実行スクリプト、テスト観点別のケース手順書) |
 | [docs/node-specs.md](docs/node-specs.md) | ノードスペック選定(AWS EC2 の Instance Type / AMI / EBS / セキュリティグループ / 月額試算) |
-| [docs/aws-provisioning.md](docs/aws-provisioning.md) | AWS 構築手順(Bash/CLI で VPC・サブネット・SG・NAT Gateway・EC2 を作成/削除/AMI 化/AMI から再作成) |
+| [docs/aws-provisioning.md](docs/aws-provisioning.md) | AWS 構築手順(Bash/CLI で VPC・サブネット・SG・NAT Gateway・EICE・EC2 を作成/削除/AMI 化/AMI から再作成) |
 | [docs/deployment-guide.md](docs/deployment-guide.md) | Node B 構築手順書(案1〜案3 の構築・確認・運用・トラブルシューティング) |
 | [deploy/](deploy/) | 構築ファイル一式(Node A の vLLM サービス化 / 案毎の Dockerfile / docker-compose.yml / .env.example / nginx conf / OpenSearch マッピング / アプリコード) |
 
