@@ -107,13 +107,9 @@ key_name=${project}-key
 ベース AMI の ID をリージョンから解決する:
 
 ```bash
-ubuntu_ami=$(aws ec2 describe-images --owners $canonical_owner \
-  --filters "Name=name,Values=$ubuntu_name" "Name=state,Values=available" \
-  --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)
+ubuntu_ami=$(aws ec2 describe-images --owners $canonical_owner --filters "Name=name,Values=$ubuntu_name" "Name=state,Values=available" --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)
 
-dlami=$(aws ec2 describe-images --owners $dlami_owner \
-  --filters "Name=name,Values=$dlami_name" "Name=state,Values=available" \
-  --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)
+dlami=$(aws ec2 describe-images --owners $dlami_owner --filters "Name=name,Values=$dlami_name" "Name=state,Values=available" --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)
 
 echo "ubuntu_ami=$ubuntu_ami / dlami=$dlami"
 # dlami が None の場合は所有者/名称を AMI カタログで確認して dlami_owner/dlami_name を調整する
@@ -122,9 +118,8 @@ echo "ubuntu_ami=$ubuntu_ami / dlami=$dlami"
 ### 0.3 キーペア(初回のみ)
 
 ```bash
-aws ec2 create-key-pair --key-name $key_name \
-  --query 'KeyMaterial' --output text > ${key_name}.pem
-chmod 400 ${key_name}.pem
+aws ec2 create-key-pair --key-name $key_name --query 'KeyMaterial' --output text > ${key_name}.pem
+chmod -c 400 ${key_name}.pem
 ```
 
 ### 0.4 SSM 用 IAM ロール(初回のみ)
@@ -143,13 +138,10 @@ cat > ssm-trust.json <<'EOF'
 }
 EOF
 
-aws iam create-role --role-name ${project}-ssm \
-  --assume-role-policy-document file://ssm-trust.json
-aws iam attach-role-policy --role-name ${project}-ssm \
-  --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+aws iam create-role --role-name ${project}-ssm --assume-role-policy-document file://ssm-trust.json
+aws iam attach-role-policy --role-name ${project}-ssm --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
 aws iam create-instance-profile --instance-profile-name ${project}-ssm
-aws iam add-role-to-instance-profile \
-  --instance-profile-name ${project}-ssm --role-name ${project}-ssm
+aws iam add-role-to-instance-profile --instance-profile-name ${project}-ssm --role-name ${project}-ssm
 
 rm -v ssm-trust.json
 ```
@@ -163,25 +155,16 @@ rm -v ssm-trust.json
 ### 1.1 VPC・サブネット・IGW・ルートテーブル
 
 ```bash
-vpc_id=$(aws ec2 create-vpc --cidr-block $vpc_cidr \
-  --tag-specifications "ResourceType=vpc,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-vpc}]" \
-  --query 'Vpc.VpcId' --output text)
+vpc_id=$(aws ec2 create-vpc --cidr-block $vpc_cidr --tag-specifications "ResourceType=vpc,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-vpc}]" --query 'Vpc.VpcId' --output text)
 aws ec2 modify-vpc-attribute --vpc-id $vpc_id --enable-dns-hostnames
 
-subnet_id=$(aws ec2 create-subnet --vpc-id $vpc_id --cidr-block $subnet_cidr \
-  --availability-zone $az \
-  --tag-specifications "ResourceType=subnet,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-subnet}]" \
-  --query 'Subnet.SubnetId' --output text)
+subnet_id=$(aws ec2 create-subnet --vpc-id $vpc_id --cidr-block $subnet_cidr --availability-zone $az --tag-specifications "ResourceType=subnet,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-subnet}]" --query 'Subnet.SubnetId' --output text)
 
 # IGW は VPC にアタッチのみ(課金なし)。EC2 サブネットには既定ルートを張らない=隔離
-igw_id=$(aws ec2 create-internet-gateway \
-  --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-igw}]" \
-  --query 'InternetGateway.InternetGatewayId' --output text)
+igw_id=$(aws ec2 create-internet-gateway --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-igw}]" --query 'InternetGateway.InternetGatewayId' --output text)
 aws ec2 attach-internet-gateway --internet-gateway-id $igw_id --vpc-id $vpc_id
 
-rtb_id=$(aws ec2 create-route-table --vpc-id $vpc_id \
-  --tag-specifications "ResourceType=route-table,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-rtb}]" \
-  --query 'RouteTable.RouteTableId' --output text)
+rtb_id=$(aws ec2 create-route-table --vpc-id $vpc_id --tag-specifications "ResourceType=route-table,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-rtb}]" --query 'RouteTable.RouteTableId' --output text)
 aws ec2 associate-route-table --route-table-id $rtb_id --subnet-id $subnet_id
 ```
 
@@ -190,18 +173,13 @@ aws ec2 associate-route-table --route-table-id $rtb_id --subnet-id $subnet_id
 内部通信は同一 SG 内を全許可(Node B → Node A:8080 等を包含)、外部からは SSH と WebUI のみ許可する。
 
 ```bash
-sg_id=$(aws ec2 create-security-group --group-name ${project}-ec2 \
-  --description "RAG EC2 instances" --vpc-id $vpc_id \
-  --tag-specifications "ResourceType=security-group,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-ec2-sg}]" \
-  --query 'GroupId' --output text)
+sg_id=$(aws ec2 create-security-group --group-name ${project}-ec2 --description "RAG EC2 instances" --vpc-id $vpc_id --tag-specifications "ResourceType=security-group,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-ec2-sg}]" --query 'GroupId' --output text)
 
 # ノード間通信(同一 SG からの全通信を許可)
-aws ec2 authorize-security-group-ingress --group-id $sg_id \
-  --protocol -1 --source-group $sg_id
+aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol -1 --source-group $sg_id
 
 # SSH(管理元のみ。踏み台/SSH を使う場合に有効。SSM のみなら不要)
-aws ec2 authorize-security-group-ingress --group-id $sg_id \
-  --protocol tcp --port 22 --cidr $admin_cidr
+aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr $admin_cidr
 
 # WebUI(利用者ネットワークのみ): 案1=8000 / 案2=3000 / 案3=443
 aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 8000 --cidr $user_cidr
@@ -262,31 +240,18 @@ aws ssm start-session --target $llm_id
 
 ```bash
 # NAT 専用の一時パブリックサブネット + ルートテーブル(0.0.0.0/0 -> IGW)
-nat_subnet_id=$(aws ec2 create-subnet --vpc-id $vpc_id --cidr-block $nat_subnet_cidr \
-  --availability-zone $az \
-  --tag-specifications "ResourceType=subnet,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-nat-subnet}]" \
-  --query 'Subnet.SubnetId' --output text)
-
-nat_rtb_id=$(aws ec2 create-route-table --vpc-id $vpc_id \
-  --tag-specifications "ResourceType=route-table,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-nat-rtb}]" \
-  --query 'RouteTable.RouteTableId' --output text)
-aws ec2 create-route --route-table-id $nat_rtb_id \
-  --destination-cidr-block 0.0.0.0/0 --gateway-id $igw_id
-nat_assoc_id=$(aws ec2 associate-route-table --route-table-id $nat_rtb_id \
-  --subnet-id $nat_subnet_id --query 'AssociationId' --output text)
+nat_subnet_id=$(aws ec2 create-subnet --vpc-id $vpc_id --cidr-block $nat_subnet_cidr --availability-zone $az --tag-specifications "ResourceType=subnet,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-nat-subnet}]" --query 'Subnet.SubnetId' --output text)
+nat_rtb_id=$(aws ec2 create-route-table --vpc-id $vpc_id --tag-specifications "ResourceType=route-table,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-nat-rtb}]" --query 'RouteTable.RouteTableId' --output text)
+aws ec2 create-route --route-table-id $nat_rtb_id --destination-cidr-block 0.0.0.0/0 --gateway-id $igw_id
+nat_assoc_id=$(aws ec2 associate-route-table --route-table-id $nat_rtb_id --subnet-id $nat_subnet_id --query 'AssociationId' --output text)
 
 # EIP + NAT Gateway
-eip_alloc=$(aws ec2 allocate-address --domain vpc \
-  --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-nat-eip}]" \
-  --query 'AllocationId' --output text)
-nat_id=$(aws ec2 create-nat-gateway --subnet-id $nat_subnet_id --allocation-id $eip_alloc \
-  --tag-specifications "ResourceType=natgateway,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-nat}]" \
-  --query 'NatGateway.NatGatewayId' --output text)
+eip_alloc=$(aws ec2 allocate-address --domain vpc --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-nat-eip}]" --query 'AllocationId' --output text)
+nat_id=$(aws ec2 create-nat-gateway --subnet-id $nat_subnet_id --allocation-id $eip_alloc --tag-specifications "ResourceType=natgateway,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-nat}]" --query 'NatGateway.NatGatewayId' --output text)
 aws ec2 wait nat-gateway-available --nat-gateway-ids $nat_id
 
 # ワークロードサブネットの既定ルートを NAT へ向ける(これで外向き通信が開通)
-aws ec2 create-route --route-table-id $rtb_id \
-  --destination-cidr-block 0.0.0.0/0 --nat-gateway-id $nat_id
+aws ec2 create-route --route-table-id $rtb_id --destination-cidr-block 0.0.0.0/0 --nat-gateway-id $nat_id
 ```
 
 ### 2.2 削除(セットアップ / AMI 化が済んだら)
@@ -315,16 +280,14 @@ aws ec2 delete-subnet --subnet-id $nat_subnet_id
 セットアップ完了後、ノードのゴールデンイメージを作成する。ファイル整合のため一旦停止してから作成する。
 
 ```bash
-src_id=$app2_id                       # AMI 化する対象(例: app-002)
-ami_name=${project}-app-002-$(date +%Y%m%d)
+# AMI 化する対象(例: app-002)
+src_id="${app2_id}""
+ami_name="${project}-app-002-$(date +%Y%m%d)"
 
 aws ec2 stop-instances --instance-ids $src_id
 aws ec2 wait instance-stopped --instance-ids $src_id
 
-image_id=$(aws ec2 create-image --instance-id $src_id --name "$ami_name" \
-  --description "RAG app-002 golden image" \
-  --tag-specifications "ResourceType=image,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$ami_name}]" \
-  --query 'ImageId' --output text)
+image_id=$(aws ec2 create-image --instance-id $src_id --name "$ami_name" --description "RAG app-002 golden image" --tag-specifications "ResourceType=image,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$ami_name}]" --query 'ImageId' --output text)
 aws ec2 wait image-available --image-ids $image_id
 echo "created AMI: $image_id"
 
@@ -348,10 +311,7 @@ target_ip=$ip_app2
 target_root=$root_size_app2
 
 # 同一プライベート IP を再利用するため、旧インスタンスを先に削除
-old_id=$(aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=$target_hostname" "Name=tag:Project,Values=$project" \
-            "Name=instance-state-name,Values=pending,running,stopped,stopping" \
-  --query 'Reservations[].Instances[].InstanceId' --output text)
+old_id=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=$target_hostname" "Name=tag:Project,Values=$project" "Name=instance-state-name,Values=pending,running,stopped,stopping" --query 'Reservations[].Instances[].InstanceId' --output text)
 aws ec2 terminate-instances --instance-ids $old_id
 aws ec2 wait instance-terminated --instance-ids $old_id
 
@@ -371,20 +331,12 @@ echo "relaunched $target_hostname as $new_instance_type: $new_id"
 ### 5.1 ID をタグから再取得(新しいシェルの場合)
 
 ```bash
-vpc_id=$(aws ec2 describe-vpcs --filters "Name=tag:Project,Values=$project" \
-  --query 'Vpcs[0].VpcId' --output text)
-subnet_id=$(aws ec2 describe-subnets --filters "Name=tag:Project,Values=$project" \
-  "Name=tag:Name,Values=$project-subnet" --query 'Subnets[0].SubnetId' --output text)
-sg_id=$(aws ec2 describe-security-groups --filters "Name=tag:Project,Values=$project" \
-  --query 'SecurityGroups[0].GroupId' --output text)
-igw_id=$(aws ec2 describe-internet-gateways \
-  --filters "Name=tag:Project,Values=$project" \
-  --query 'InternetGateways[0].InternetGatewayId' --output text)
-rtb_id=$(aws ec2 describe-route-tables --filters "Name=tag:Project,Values=$project" \
-  "Name=tag:Name,Values=$project-rtb" --query 'RouteTables[0].RouteTableId' --output text)
-instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Project,Values=$project" \
-  "Name=instance-state-name,Values=pending,running,stopped,stopping" \
-  --query 'Reservations[].Instances[].InstanceId' --output text)
+vpc_id=$(aws ec2 describe-vpcs --filters "Name=tag:Project,Values=$project" --query 'Vpcs[0].VpcId' --output text)
+subnet_id=$(aws ec2 describe-subnets --filters "Name=tag:Project,Values=$project" "Name=tag:Name,Values=$project-subnet" --query 'Subnets[0].SubnetId' --output text)
+sg_id=$(aws ec2 describe-security-groups --filters "Name=tag:Project,Values=$project" --query 'SecurityGroups[0].GroupId' --output text)
+igw_id=$(aws ec2 describe-internet-gateways --filters "Name=tag:Project,Values=$project" --query 'InternetGateways[0].InternetGatewayId' --output text)
+rtb_id=$(aws ec2 describe-route-tables --filters "Name=tag:Project,Values=$project" "Name=tag:Name,Values=$project-rtb" --query 'RouteTables[0].RouteTableId' --output text)
+instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Project,Values=$project" "Name=instance-state-name,Values=pending,running,stopped,stopping" --query 'Reservations[].Instances[].InstanceId' --output text)
 ```
 
 ### 5.2 削除順序
@@ -420,8 +372,7 @@ aws ec2 delete-vpc --vpc-id $vpc_id
 ```bash
 # AMI とスナップショットの削除(不要な世代のみ)
 aws ec2 deregister-image --image-id $image_id
-snap_id=$(aws ec2 describe-images --image-ids $image_id \
-  --query 'Images[0].BlockDeviceMappings[0].Ebs.SnapshotId' --output text 2>/dev/null)
+snap_id=$(aws ec2 describe-images --image-ids $image_id --query 'Images[0].BlockDeviceMappings[0].Ebs.SnapshotId' --output text 2>/dev/null)
 # ↑ deregister 後は取得不可のため、必要なら deregister 前に snap_id を控えてから削除する
 # aws ec2 delete-snapshot --snapshot-id $snap_id
 
@@ -432,8 +383,7 @@ rm -v ${key_name}.pem
 # IAM(他で使っていなければ)
 aws iam remove-role-from-instance-profile --instance-profile-name ${project}-ssm --role-name ${project}-ssm
 aws iam delete-instance-profile --instance-profile-name ${project}-ssm
-aws iam detach-role-policy --role-name ${project}-ssm \
-  --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+aws iam detach-role-policy --role-name ${project}-ssm --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
 aws iam delete-role --role-name ${project}-ssm
 ```
 
