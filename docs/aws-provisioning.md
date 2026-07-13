@@ -20,6 +20,7 @@ AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化す�
 - **単一サブネット**: 4 ノードすべてを 1 つのプライベートサブネット(192.168.0.0/26)に収容する
 - **NAT Gateway は必要時のみ**: 定常運用ではインターネット不要(モデル・イメージは AMI/EBS に取得済み、利用者は VPN 等の閉域から WebUI へ)。パッケージ取得やモデルダウンロードが必要なセットアップ時だけ NAT を作成し、AMI 化後に削除する
   - NAT Gateway は IGW へ抜ける**専用のパブリックサブネット**に置く必要があり、ワークロード用サブネットには同居できない。そのため NAT 用の一時サブネット(192.168.0.64/28)を NAT と同じライフサイクルで作成・削除する(ワークロードは常に単一サブネットのまま)
+  - **IGW も NAT と同時に作成・削除する**: NAT Gateway 単体ではインターネットに到達できず、出口として IGW が必須(経路: Instance → NAT GW → IGW → Internet)。IGW 自体は無料だが、定常運用時にインターネット経路を一切残さない隔離のため、IGW も §2 で NAT と同ライフサイクルにする。**EICE は IGW を経由しない**ため、IGW/NAT が無い定常運用でもシェル接続は維持される
 - **シェルアクセスは EC2 Instance Connect Endpoint(EICE)**: プライベート運用のためインバウンド SSH を外部へ開けず、VPC 内の EICE 経由で接続する。パブリック IP・踏み台・NAT を必要とせず、**NAT 削除後の隔離状態でも接続できる**(EICE 自体は無料。§1.4)
 - すべてのリソースに `Project` タグを付け、削除時はタグで特定する
 
@@ -28,7 +29,7 @@ AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化す�
 ```mermaid
 flowchart TB
     ADMIN["管理者端末<br/>aws ec2-instance-connect"]
-    IGW["Internet Gateway"]
+    IGW["Internet Gateway<br/>(NAT と同時作成・削除)"]
     subgraph vpc["VPC 192.168.0.0/24"]
         subgraph snet["subnet 192.168.0.0/26(プライベート・常設)"]
             EICE["EC2 Instance Connect<br/>Endpoint(常設・無料)"]
@@ -38,7 +39,7 @@ flowchart TB
             B3["app-003<br/>192.168.0.23"]
             SG(["Security Group<br/>rag-system-ec2-sg"])
         end
-        subgraph natnet["subnet 192.168.0.64/28(NAT 用・一時)"]
+        subgraph natnet["subnet 192.168.0.64/28(NAT・IGW 用・一時)"]
             NAT["NAT Gateway + EIP"]
         end
     end
@@ -137,7 +138,9 @@ chmod -c 400 ${key_name}.pem
 
 ## 1. 作成 — ネットワーク / SG / EC2
 
-### 1.1 VPC・サブネット・IGW・ルートテーブル
+### 1.1 VPC・サブネット・ルートテーブル
+
+IGW は定常運用では作らない(NAT と同時に §2 で作成・削除)。ワークロードサブネットは既定ルートを持たない=隔離状態で作る。
 
 ```bash
 vpc_id=$(aws ec2 create-vpc --cidr-block $vpc_cidr --tag-specifications "ResourceType=vpc,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-vpc}]" --query 'Vpc.VpcId' --output text)
@@ -145,10 +148,7 @@ aws ec2 modify-vpc-attribute --vpc-id $vpc_id --enable-dns-hostnames
 
 subnet_id=$(aws ec2 create-subnet --vpc-id $vpc_id --cidr-block $subnet_cidr --availability-zone $az --tag-specifications "ResourceType=subnet,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-subnet}]" --query 'Subnet.SubnetId' --output text)
 
-# IGW は VPC にアタッチのみ(課金なし)。EC2 サブネットには既定ルートを張らない=隔離
-igw_id=$(aws ec2 create-internet-gateway --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-igw}]" --query 'InternetGateway.InternetGatewayId' --output text)
-aws ec2 attach-internet-gateway --internet-gateway-id $igw_id --vpc-id $vpc_id
-
+# ルートテーブル(既定ルートを張らない=隔離。外向き通信は §2 で NAT を作ったときだけ開通)
 rtb_id=$(aws ec2 create-route-table --vpc-id $vpc_id --tag-specifications "ResourceType=route-table,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-rtb}]" --query 'RouteTable.RouteTableId' --output text)
 aws ec2 associate-route-table --route-table-id $rtb_id --subnet-id $subnet_id
 ```
@@ -245,6 +245,10 @@ aws ec2-instance-connect ssh --instance-id $app1_id --os-user ubuntu --connectio
 ### 2.1 作成
 
 ```bash
+# IGW を作成し VPC にアタッチ(NAT の出口。IGW 単体は課金なし)
+igw_id=$(aws ec2 create-internet-gateway --tag-specifications "ResourceType=internet-gateway,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-igw}]" --query 'InternetGateway.InternetGatewayId' --output text)
+aws ec2 attach-internet-gateway --internet-gateway-id $igw_id --vpc-id $vpc_id
+
 # NAT 専用の一時パブリックサブネット + ルートテーブル(0.0.0.0/0 -> IGW)
 nat_subnet_id=$(aws ec2 create-subnet --vpc-id $vpc_id --cidr-block $nat_subnet_cidr --availability-zone $az --tag-specifications "ResourceType=subnet,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-nat-subnet}]" --query 'Subnet.SubnetId' --output text)
 nat_rtb_id=$(aws ec2 create-route-table --vpc-id $vpc_id --tag-specifications "ResourceType=route-table,Tags=[{Key=Project,Value=$project},{Key=Name,Value=$project-nat-rtb}]" --query 'RouteTable.RouteTableId' --output text)
@@ -275,6 +279,10 @@ aws ec2 release-address --allocation-id $eip_alloc
 aws ec2 disassociate-route-table --association-id $nat_assoc_id
 aws ec2 delete-route-table --route-table-id $nat_rtb_id
 aws ec2 delete-subnet --subnet-id $nat_subnet_id
+
+# IGW をデタッチして削除(NAT/EIP 削除後なので VPC 内にパブリック IP が無く detach 可能)
+aws ec2 detach-internet-gateway --internet-gateway-id $igw_id --vpc-id $vpc_id
+aws ec2 delete-internet-gateway --internet-gateway-id $igw_id
 ```
 
 > NAT Gateway は稼働時間と処理データ量で課金される。使わない間は必ず削除する。ID を保持していない新しいシェルで削除する場合は §5.1 のタグ検索で `nat_id` 等を再取得する。
@@ -349,7 +357,7 @@ instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Project,Values=$pr
 
 ### 5.2 削除順序
 
-依存関係のため、インスタンス → EICE → (NAT) → SG → サブネット → ルートテーブル → IGW → VPC の順で削除する。
+依存関係のため、インスタンス → EICE → (NAT+IGW) → SG → サブネット → ルートテーブル → VPC の順で削除する。IGW は NAT と一体で §2.2 が削除するため、ここでは扱わない。
 
 ```bash
 # 1) インスタンス(ENI 解放まで待つ)
@@ -361,7 +369,7 @@ aws ec2 delete-instance-connect-endpoint --instance-connect-endpoint-id $eice_id
 # State が返らなく(削除完了)なるまで確認する
 aws ec2 describe-instance-connect-endpoints --instance-connect-endpoint-ids $eice_id --query 'InstanceConnectEndpoints[0].State' --output text
 
-# 3) NAT が残っていれば §2.2 を先に実施
+# 3) NAT+IGW が残っていれば §2.2 を先に実施(IGW も §2.2 が削除する)
 
 # 4) Security Group(インスタンス SG → EICE SG の順。既定 SG は VPC 削除時に自動消滅)
 aws ec2 delete-security-group --group-id $sg_id
@@ -373,11 +381,7 @@ aws ec2 delete-subnet --subnet-id $subnet_id
 # 6) ルートテーブル(メインは不可。カスタムのみ)
 aws ec2 delete-route-table --route-table-id $rtb_id
 
-# 7) IGW(デタッチ後に削除)
-aws ec2 detach-internet-gateway --internet-gateway-id $igw_id --vpc-id $vpc_id
-aws ec2 delete-internet-gateway --internet-gateway-id $igw_id
-
-# 8) VPC
+# 7) VPC
 aws ec2 delete-vpc --vpc-id $vpc_id
 ```
 
