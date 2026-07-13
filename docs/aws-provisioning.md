@@ -236,6 +236,48 @@ ssh -i ${key_name}.pem -p 5222 ubuntu@localhost
 aws ec2-instance-connect ssh --instance-id $app1_id --os-user ubuntu --connection-type eice
 ```
 
+#### 管理者端末から WebUI へアクセス(SSH ポートフォワード)
+
+EICE のトンネルは 22/3389 のみ許可されるため、WebUI ポート(案1=8000 / 案2=3000 / 案3=443)へ直接トンネルはできない。EICE 経由で SSH ログインし、その中でローカルフォワードして運ぶ。パラメータを `.ssh/config` に登録すると `ssh ragsys` で接続できる(方法 B の ProxyCommand をベースにする)。
+
+```bash
+webui_instance=$app2_id   # WebUI を見るノードの instance-id(例: 案2 = app-002)
+
+mkdir -p .ssh
+cat > .ssh/config <<EOF
+Host ragsys
+    HostName ${webui_instance}
+    User ubuntu
+    IdentityFile $(pwd)/${key_name}.pem
+    ProxyCommand aws ec2-instance-connect open-tunnel --instance-id %h
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LocalForward 8000 localhost:8000
+    LocalForward 3000 localhost:3000
+    LocalForward 8443 localhost:443
+EOF
+```
+
+```bash
+# 接続(-N: シェルを開かずフォワードのみ保持)
+ssh -F .ssh/config -N ragsys
+# ~/.ssh/config に同じ Host ブロックを追記すれば -F 省略で実行できる
+ssh -N ragsys
+```
+
+接続先ノードの案に対応する URL をブラウザで開く。
+
+| 案 | ノード | WebUI ポート | LocalForward | ブラウザ URL |
+|---|---|---|---|---|
+| 案1 | app-001 | 8000 | `8000 localhost:8000` | http://localhost:8000 |
+| 案2 | app-002 | 3000 | `3000 localhost:3000` | http://localhost:3000 |
+| 案3 | app-003 | 443 | `8443 localhost:443` | https://localhost:8443 |
+
+> - WebUI ポートを SG で外部公開する必要はない(トラフィックは 22 番トンネル内を通る)。
+> - `HostName`(webui_instance)は接続先ノード 1 台の instance-id。稼働中の案に対応する LocalForward だけが実際に転送され、他ポートはブラウザで開いたときに空振りするだけで接続には影響しない。複数ノードへ同時接続するなら Host を分ける(例: ragsys-app1 / ragsys-app2 / ragsys-app3)。
+> - `StrictHostKeyChecking no` 等は AMI 再作成でホスト鍵が変わるため付けている(接続は EICE/IAM で保護済み。厳格運用なら外す)。
+> - 常用の多人数アクセスは EICE ではなく、VPN/Direct Connect 等の閉域から WebUI ポートへ直接(SG の `user_cidr` ルール)。
+
 ---
 
 ## 2. NAT Gateway — 必要時のみ(作成 → 使用後削除)
