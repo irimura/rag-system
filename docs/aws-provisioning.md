@@ -289,6 +289,68 @@ ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-003(案3)/ ssh -N ragsys-llm
 > - `StrictHostKeyChecking no` 等は AMI 再作成でホスト鍵が変わるため付けている(接続は EICE/IAM で保護済み。厳格運用なら外す)。
 > - 常用の多人数アクセスは EICE ではなく、VPN/Direct Connect 等の閉域から WebUI ポートへ直接(SG の `user_cidr` ルール)。
 
+### 1.5 EC2 自動停止(毎日 18:00・EventBridge Scheduler)
+
+コストの支配項は GPU ノードのため、毎日 18:00(JST)に全ノードを自動停止する。EventBridge Scheduler が IAM ロールを引き受けて EC2 の `StopInstances` を直接呼ぶ(Lambda 不要)。
+
+```bash
+# 1) Scheduler 用 IAM ロール(scheduler.amazonaws.com が引き受け、Project タグ付き EC2 のみ停止可)
+cat > scheduler-trust.json <<'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow",
+      "Principal": { "Service": "scheduler.amazonaws.com" },
+      "Action": "sts:AssumeRole" }
+  ]
+}
+EOF
+cat > scheduler-policy.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow",
+      "Action": "ec2:StopInstances",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": { "StringEquals": { "aws:ResourceTag/Project": "${project}" } } }
+  ]
+}
+EOF
+aws iam create-role --role-name ${project}-scheduler --assume-role-policy-document file://scheduler-trust.json
+aws iam put-role-policy --role-name ${project}-scheduler --policy-name stop-ec2 --policy-document file://scheduler-policy.json
+scheduler_role_arn=$(aws iam get-role --role-name ${project}-scheduler --query 'Role.Arn' --output text)
+rm -v scheduler-trust.json scheduler-policy.json
+```
+
+```bash
+# 2) 毎日 18:00 JST に対象インスタンスを停止するスケジュールを作成
+cat > stop-schedule.json <<EOF
+{
+  "Name": "${project}-stop-1800",
+  "ScheduleExpression": "cron(0 18 * * ? *)",
+  "ScheduleExpressionTimezone": "Asia/Tokyo",
+  "FlexibleTimeWindow": { "Mode": "OFF" },
+  "Target": {
+    "Arn": "arn:aws:scheduler:::aws-sdk:ec2:stopInstances",
+    "RoleArn": "${scheduler_role_arn}",
+    "Input": "{\"InstanceIds\":[\"${llm_id}\",\"${app1_id}\",\"${app2_id}\",\"${app3_id}\"]}"
+  }
+}
+EOF
+aws scheduler create-schedule --cli-input-json file://stop-schedule.json
+rm -v stop-schedule.json
+```
+
+- `cron(0 18 * * ? *)` + `Asia/Tokyo` で毎日 18:00 JST(アカウントのリージョンに依らずタイムゾーン指定が効く)。
+- 停止対象は `Input` の `InstanceIds`。GPU ノードだけ止めてアプリノードは稼働させたい場合は `${llm_id}` のみにする。
+- 始業時に自動起動もしたい場合は、`Arn` を `...ec2:startInstances`、`Name` を `${project}-start-0900`、cron を `cron(0 9 * * ? *)` にして同様にもう 1 本作る(ポリシーに `ec2:StartInstances` の追加が必要)。
+- 確認・削除:
+
+```bash
+aws scheduler get-schedule --name ${project}-stop-1800 --query 'State' --output text   # 確認
+aws scheduler delete-schedule --name ${project}-stop-1800                               # 削除(§5.3 でも実施)
+```
+
 ---
 
 ## 2. NAT Gateway — 必要時のみ(作成 → 使用後削除)
@@ -450,9 +512,14 @@ snap_id=$(aws ec2 describe-images --image-ids ${image_id} --query 'Images[0].Blo
 # キーペア
 aws ec2 delete-key-pair --key-name ${key_name}
 rm -v ${key_name}.pem
+
+# EC2 自動停止(§1.5)を作成した場合: スケジュールと Scheduler 用 IAM ロール
+aws scheduler delete-schedule --name ${project}-stop-1800
+aws iam delete-role-policy --role-name ${project}-scheduler --policy-name stop-ec2
+aws iam delete-role --role-name ${project}-scheduler
 ```
 
-> EICE 方式ではインスタンス IAM ロールを作らないため、IAM の後片付けは不要。
+> EICE 方式ではインスタンス IAM ロールを作らない。IAM は §1.5 の自動停止を使った場合の Scheduler ロール(上記)のみ後片付けが要る。
 
 ---
 
@@ -460,7 +527,7 @@ rm -v ${key_name}.pem
 
 ```mermaid
 flowchart LR
-    N["1. ネットワーク+SG+EC2+EICE 作成<br/>(§1)"] --> NAT1["2. NAT 作成<br/>(§2.1)"]
+    N["1. ネットワーク+SG+EC2+EICE+自動停止 作成<br/>(§1)"] --> NAT1["2. NAT 作成<br/>(§2.1)"]
     NAT1 --> S["3. EICE 接続しセットアップ<br/>(deployment-guide.md)"]
     S --> AMI["4. AMI 化<br/>(§3)"]
     AMI --> NAT2["5. NAT 削除<br/>(§2.2)"]
