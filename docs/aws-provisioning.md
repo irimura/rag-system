@@ -238,43 +238,54 @@ aws ec2-instance-connect ssh --instance-id $app1_id --os-user ubuntu --connectio
 
 #### 管理者端末から WebUI へアクセス(SSH ポートフォワード)
 
-EICE のトンネルは 22/3389 のみ許可されるため、WebUI ポート(案1=8000 / 案2=3000 / 案3=443)へ直接トンネルはできない。EICE 経由で SSH ログインし、その中でローカルフォワードして運ぶ。パラメータを `.ssh/config` に登録すると `ssh ragsys` で接続できる(方法 B の ProxyCommand をベースにする)。
+EICE のトンネルは 22/3389 のみ許可されるため、WebUI ポート(案1=8000 / 案2=3000 / 案3=443)へ直接トンネルはできない。EICE 経由で SSH ログインし、その中でローカルフォワードして運ぶ。インスタンスごとに `~/.ssh/config` へ登録すると `ssh ragsys-app-002` のように接続できる(方法 B の ProxyCommand をベースにする)。
 
 ```bash
-webui_instance=$app2_id   # WebUI を見るノードの instance-id(例: 案2 = app-002)
+# 共通設定(ragsys-*)+ インスタンス別 Host を ~/.ssh/config へ追記(既存設定を消さないよう >> )
+cat <<__EOF__>> ~/.ssh/config <<EOF
 
-mkdir -p .ssh
-cat > .ssh/config <<EOF
-Host ragsys
-    HostName ${webui_instance}
+Host ragsys-*
     User ubuntu
     IdentityFile $(pwd)/${key_name}.pem
     ProxyCommand aws ec2-instance-connect open-tunnel --instance-id %h
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
+
+Host ragsys-llm-001
+    HostName ${llm_id}
+    LocalForward 8080 localhost:8080
+
+Host ragsys-app-001
+    HostName ${app1_id}
     LocalForward 8000 localhost:8000
+
+Host ragsys-app-002
+    HostName ${app2_id}
     LocalForward 3000 localhost:3000
+
+Host ragsys-app-003
+    HostName ${app3_id}
     LocalForward 8443 localhost:443
-EOF
+__EOF__
 ```
 
 ```bash
-# 接続(-N: シェルを開かずフォワードのみ保持)
-ssh -F .ssh/config -N ragsys
-# ~/.ssh/config に同じ Host ブロックを追記すれば -F 省略で実行できる
-ssh -N ragsys
+# 各ノードへ接続(-N: シェルを開かずフォワードのみ保持)
+ssh -N ragsys-app-002    # 案2 の WebUI
+ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-003(案3)/ ssh -N ragsys-llm-001(vLLM API)
 ```
 
-接続先ノードの案に対応する URL をブラウザで開く。
+接続後、Host に対応する URL をブラウザで開く(llm-001 は WebUI ではなく vLLM API 用)。
 
-| 案 | ノード | WebUI ポート | LocalForward | ブラウザ URL |
-|---|---|---|---|---|
-| 案1 | app-001 | 8000 | `8000 localhost:8000` | http://localhost:8000 |
-| 案2 | app-002 | 3000 | `3000 localhost:3000` | http://localhost:3000 |
-| 案3 | app-003 | 443 | `8443 localhost:443` | https://localhost:8443 |
+| Host | ノード | ローカル → リモート | アクセス |
+|---|---|---|---|
+| ragsys-llm-001 | llm-001 | 8080 → :8080 | `curl http://localhost:8080/v1/models`(vLLM API・デバッグ用) |
+| ragsys-app-001 | app-001(案1) | 8000 → :8000 | http://localhost:8000 |
+| ragsys-app-002 | app-002(案2) | 3000 → :3000 | http://localhost:3000 |
+| ragsys-app-003 | app-003(案3) | 8443 → :443 | https://localhost:8443 |
 
 > - WebUI ポートを SG で外部公開する必要はない(トラフィックは 22 番トンネル内を通る)。
-> - `HostName`(webui_instance)は接続先ノード 1 台の instance-id。稼働中の案に対応する LocalForward だけが実際に転送され、他ポートはブラウザで開いたときに空振りするだけで接続には影響しない。複数ノードへ同時接続するなら Host を分ける(例: ragsys-app1 / ragsys-app2 / ragsys-app3)。
+> - `~/.ssh/config` へ追記(`>>`)するため既存の他ホスト設定は保持される。再実行すると重複登録になるので、作り直すときは古い `ragsys-*` ブロックを削除してから実行する。
 > - `StrictHostKeyChecking no` 等は AMI 再作成でホスト鍵が変わるため付けている(接続は EICE/IAM で保護済み。厳格運用なら外す)。
 > - 常用の多人数アクセスは EICE ではなく、VPN/Direct Connect 等の閉域から WebUI ポートへ直接(SG の `user_cidr` ルール)。
 
