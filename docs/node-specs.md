@@ -126,10 +126,25 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 | 案2 常用(g6e.2xlarge + m7i.2xlarge) | 約 440,600 | 約 96,500 |
 | 案3 常用(g6e.2xlarge + r7i.2xlarge) | 約 454,400 | 約 99,500 |
 
+**非インスタンス系サービスの月額(EC2 インスタンス費以外)**
+
+| サービス | 課金モデル | 月額目安(1USD=160JPY・東京) |
+|---|---|---|
+| VPC / サブネット / ルートテーブル / IGW / Security Group | 無料 | 0 円 |
+| EC2 Instance Connect Endpoint(EICE) | エンドポイントは無料(データ転送のみ) | ほぼ 0 円 |
+| **EBS gp3** | 確保 GB × 月(**インスタンス停止中も課金**) | 約 15.4 円/GB・月 → 100GB 約 1,540 円 / 200GB 約 3,100 円 |
+| EBS スナップショット(AMI 用・任意) | 使用 GB × 月(増分) | 約 8 円/GB・月(1 世代 約 30GB なら 約 240 円) |
+| NAT Gateway(一時) | 稼働時間 + 処理データ量 | 約 10 円/h + 約 10 円/GB(定常運用では削除) |
+| Elastic IP(NAT 用・一時) | 割当中のみ | 約 0.8 円/h(NAT 稼働中のみ) |
+
+- **EBS が唯一の常時課金項目**(インスタンスを停止しても消えない)。推奨構成の EBS 合算: 案1/案2 = Node A 200GB + Node B 100GB ≒ **約 4,600 円/月**、案3 = 200GB + 200GB ≒ **約 6,200 円/月**。
+- **NAT Gateway + EIP は一時利用**。例: セットアップ 1 回(約 10h 稼働・モデル/イメージ 100GB ダウンロード)≒ **約 1,100 円/回**。使い終えたら削除して停止する([aws-provisioning.md](aws-provisioning.md) §2.2)。
+- VPC・IGW・EICE 等は無料。データ転送(外向き egress)は別途だが、定常運用は閉域(IGW/NAT なし)のため EC2 起点の egress はほぼ発生しない。
+
 **留意点**
 
 - コストの支配項は **Node A(GPU)で、全体の 8〜9 割**を占める。日中帯のみの停止運用(EC2 は停止中 EBS 課金のみ)にするだけで GPU 費用は約 1/4.6 になるため、検証フェーズは**夜間・休日停止の運用を強く推奨**(cron / EventBridge スケジューラ等で自動化)
-- 上記は EC2 インスタンス費のみ。**EBS(gp3: 約 0.096 USD/GB・月 ≒ 200GB で約 3,100 円/月)とデータ転送費は別途**
+- 上記の Instance Type 表は EC2 インスタンス費のみ。EBS・NAT・その他サービスは前掲「非インスタンス系サービスの月額」を参照
 - 常時稼働が確定したら、1 年リザーブドインスタンス / Savings Plans で GPU は 3〜4 割安くなる(例: g6e.xlarge の 1 年 RI は約 1.70 USD/h)
 - 単価・為替は変動するため、稟議・予算化の際は [AWS 料金計算ツール](https://calculator.aws/) で最新値を再計算すること
 
@@ -138,3 +153,4 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 - [Amazon EC2 G6e インスタンス](https://aws.amazon.com/ec2/instance-types/g6e/)(L40S 48GB/GPU、最大 8 GPU)
 - [EC2 高速コンピューティングインスタンス仕様](https://docs.aws.amazon.com/ec2/latest/instancetypes/ac.html)
 - [Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04)](https://docs.aws.amazon.com/dlami/latest/devguide/aws-deep-learning-base-gpu-ami-ubuntu-24-04.html)(ドライバ / CUDA / Docker / NVIDIA Container Toolkit 同梱、G6e 対応)
+- [Amazon VPC 料金](https://aws.amazon.com/vpc/pricing/)(NAT Gateway・パブリック IPv4 の単価)/ [Amazon EBS 料金](https://aws.amazon.com/ebs/pricing/)
