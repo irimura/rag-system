@@ -23,7 +23,7 @@
 ```bash
 sudo apt update
 sudo apt install -y docker.io docker-compose-v2
-sudo usermod -aG docker $USER   # 再ログインで反映
+sudo usermod -aG docker ${USER}   # 再ログインで反映
 docker version && docker compose version
 ```
 
