@@ -242,7 +242,7 @@ EICE のトンネルは 22/3389 のみ許可されるため、WebUI ポート(�
 
 ```bash
 # 共通設定(ragsys-*)+ インスタンス別 Host を ~/.ssh/config へ追記(既存設定を消さないよう >> )
-cat <<__EOF__>> ~/.ssh/config <<EOF
+cat >> ~/.ssh/config <<EOF
 
 Host ragsys-*
     User ubuntu
@@ -266,7 +266,7 @@ Host ragsys-app-002
 Host ragsys-app-003
     HostName ${app3_id}
     LocalForward 8443 localhost:443
-__EOF__
+EOF
 ```
 
 ```bash
