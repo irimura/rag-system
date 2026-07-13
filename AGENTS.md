@@ -10,7 +10,7 @@ vLLM + LangChain による日本語 RAG システムの設計・構築・評価�
 ## 最低限の規約(詳細と背景は agent/session.md §4〜6)
 
 - ドキュメントは日本語、図は Mermaid、コミットメッセージは英語(1 コミット = 1 論理変更、`Co-Authored-By: Claude <モデル名> <noreply@anthropic.com>` を付す)
-- 手順書のコマンド: `mv/cp/rm` に `-v`、`vi`→`vim`、リダイレクトは `cat` + ヒアドキュメント、未確定値は `${foo}` 変数、bash 変数は `${var}` でブレース統一、コマンドは 1 行に
+- 手順書のコマンド: `mv/cp/rm/mkdir/rmdir/install` に `-v`、`vi`→`vim`、`chmod/chgrp/chown` に `-c`、'リダイレクトは `cat` + ヒアドキュメント、未確定値は `${foo}` 変数、bash 変数は `${var}` でブレース統一、コマンドは 1 行に
 - ノード命名: **Node A = GPU(vLLM)/ Node B = アプリ+データ**。取り違え注意
 - 作業前に `git status` を確認(ユーザーが直接編集していることがある)
 - 外部 URL・ライセンス・料金を書くときは Web で実在確認してから
