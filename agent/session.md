@@ -7,7 +7,7 @@
 ## 1. プロジェクトの前提(ユーザー要件・確定事項)
 
 - vLLM は Hugging Face 形式モデルで稼働させる。**vLLM 同梱の OpenAI 互換サーバ(`vllm serve` / `vllm/vllm-openai` イメージ)を使い、自前 API ラッパーは書かない**
-- **すべて無償 OSS**。クラウドのマネージドサービスは使わない(EC2 を素の VM として使うのは可)
+- **無償利用可・ソース公開**のソフトウェアで構成する。クラウドのマネージドサービスは使わない(EC2 を素の VM として使うのは可)
 - 日本語の取り扱いが精度要件に含まれる(正規化・形態素解析 BM25・日本語特化モデル等は docs/rag-components.md に集約)
 - インフラは AWS EC2(東京 ap-northeast-1 想定)
 
@@ -51,7 +51,7 @@ README.md の「ドキュメント構成」表が正のインデックス。概�
 1. `mv` / `cp` / `rm` / `mkdir` / `rmdir` / `install` には **`-v`** を付ける(再帰 rm で大量出力が予想される場合は除く)。`chmod` / `chgrp` / `chown` には **`-c`** を付ける
 2. `vi` ではなく **`vim`**
 3. リダイレクトは **`cat` + ヒアドキュメント**(単行の `echo | tee` も変換対象)
-4. 未確定値はプレースホルダ `<foo>` ではなく **`${foo}` 変数**にし、ドキュメント冒頭に「実行前に置き換える」旨を注記
+4. 実行用の shell コマンド中の未確定値はプレースホルダ `<foo>` ではなく **`${foo}` 変数**にし、ドキュメント冒頭に「実行前に置き換える」旨を注記。systemd 等の非 shell 設定テンプレートの `<your-...>` と、本文中で構文を説明する `<type>` は適用外
 5. bash コードブロック内の変数は **`${var}` でブレース統一**(`$(...)` コマンド置換、nginx 設定の `$host` 等は対象外)
 6. コマンドはコピペしやすいよう**なるべく 1 行に**(ユーザー自身が改行削減の編集をすることがある)
 7. ドキュメントは日本語、図は Mermaid、料金は「東京・1USD=160JPY・730h/160h」基準
@@ -77,7 +77,7 @@ README.md の「ドキュメント構成」表が正のインデックス。概�
 
 - `deploy/` のアプリコード(rag-api 等)は**未ビルド・未実行**(py_compile と設計レビューのみ)。初回起動時の不具合修正はあり得る
 - `eval/golden_dataset.sample.jsonl` の正解値は**取り込む法令の版で要確認**(サンプルの位置づけ)
-- Ragas は API 変更が多く、`test/level2/run_level2.py` は ragas 0.2 系想定のサンプル。実行時にバージョン固定(`pip freeze`)が前提
+- Ragas は API 変更が多いため、`test/level2/requirements.txt` で 0.2 系へ固定済み。`pip freeze` は解決されたパッチ版の実験記録に使い、0.4 系へ上げる場合はコードも同時移行する
 - `test/` のスクリプトは案2(Qdrant+TEI)前提。案1/案3 への読み替えは各 procedure.md 末尾に記載
 - plan1 の文書には venv+systemd 手順が「コンテナを使わない場合の代替」として残っている(Docker 版が正)
 - TC09(会話文脈)は現行 rag-api 実装が弱い設計と明記済み(history-aware 書き換えは将来改善)
@@ -101,7 +101,20 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
   - R-08-④ = **ホスト鍵検証の無効化を受容**(`StrictHostKeyChecking no` は現状維持。「EICE/IAM で保護済み」の過大表現の適正化のみ実施)
   - R-09 = **検証フェーズはマイナーバージョンまで固定**(コンテナタグ・Python 依存とも)。digest 固定等の最終方針は運用設計フェーズで確定
 - **未確認(持ち越し)**: OpenSearch `knn_vector` の lucene+cosinesimil 対応の公式記載、OpenSearch「Security 無効化は非推奨」のそのものの明文(警告 2 件は確認済み)
-- **次フェーズ**: **Codex が「確認済み/一部確認」の指摘のみ修正**する(評価コード・デプロイ・AWS 手順・文書整合を論理単位で分割)。ユーザー判断 4 点は決定済みのため**全指摘に着手可能**。誤り判定はゼロのため R-01〜R-10 すべてが対象(R-10-⑥のみ「session.md §4 規約への適用除外の明文化」で対処)。本検証フェーズでは資料本体・deploy/・test/・eval/ を変更していない
+- **修正フェーズ完了(2026-07-14 / 基準 `dd6ab3d`、変更は未コミット)**:
+  - R-01/R-02: quote のみの根拠判定、Evidence Recall、正しい IDCG・重複排除を実装し、案2 rag-api の本番検索関数と OpenAI 互換 API を評価から直接使用
+  - R-03/R-04/R-09: 3 案の取り込みを全量再構築へ統一し、コンテナと Python 依存をマイナー系列まで固定(digest は未固定)
+  - R-06/R-07: OpenSearch Security Plugin を有効化し、検証用 CA / TLS、初期管理者、検索専用 / 更新専用ユーザー、初期化サービスを追加。再検索は試行回数と検索済みクエリを渡す
+  - R-05/R-08/R-10: 決定済み文言、AWS 手順 4 件、Ubuntu 24.04・案1デプロイ・各説明図 / コードの不整合を修正
+  - 追加整合修正: 案3の `rag-api` / `ingest` へ初期管理者パスワードを渡さないよう compose の環境変数を限定し、評価仕様に案2 / 案3の `RERANK_TOP_N` 既定値差を明記
+- **修正後検証**: Python 全 16 ファイルの AST、JSON 2 ファイル、JSONL 10 行、Markdown 22 ファイル / ローカルリンク 95 件 / コードフェンス、単体テスト 6 件、requirements 制約、浮動コンテナタグ、`git diff --check` は合格
+- **未検証**: Docker CLI 不在のため compose config / build / 起動、OpenSearch の実接続・認可、AWS 資格情報を使う実操作は未実施。bash / shellcheck も利用不可のため AWS コマンドブロックは静的確認のみ
+- **回帰レビュー N-01〜N-04 対応(2026-07-14、未コミット)**:
+  - N-01: Docker CLI は不在。公式 `opensearch-build` 2.19.6 の Dockerfile / entrypoint と Security Plugin 2.19.6.0 のソースから、demo 設定はイメージビルド時に無効で、`root-ca.pem` はコンテナ起動時に `config/` へ配置されることを確認。`rag-api` の build-stage COPY を削除し、OpenSearch を先に起動して CA をホストへ取り出し、`rag-api` / `security-init` / `ingest` へ読み取り専用 mount する手順へ変更。イメージ内ファイル一覧と実 build は未確認
+  - N-02: 同版の埋め込みノード証明書を静的解析し、SAN の `node-0.example.com` と compose alias の一致を確認。追試で、`opensearch-py` 2.8.0 の `indices.exists()` は `HEAD /{index}`、OpenSearch 2.19.6 の同ルートは `GetIndexAction.NAME = indices:admin/get` を実行すると判明したため、`rag_reader` の明示権限を誤っていた `indices:admin/exists` から `indices:admin/get` へ修正。`rag_ingest` の `indices_all`、demo 設定の admin REST 有効ロールは静的確認済み。security-init 終了コード 0、TLS 実接続、Security REST API、health / 実検索、更新可否の実測は Docker 不在のため未確認
+  - N-03: 案2の評価 endpoint は認可を追加せず、同一 Docker network からも到達可能という実態を保ったまま、docstring を「認可なし・ホスト公開だけ 127.0.0.1 限定」へ修正
+  - N-04: `.env.example` / `docker-compose.yml` / `rag-api/Dockerfile` の末尾へ LF を 1 byte 追加。3 ファイルとも既存の LF 改行形式を維持
+  - 回帰修正後検証: Python 16 ファイル、単体テスト 6 件、JSON 2 ファイル、JSONL 10 行、Markdown 23 ファイル / ローカルリンク 151 件 / コードフェンス、requirements 5 ファイル 39 依存、コンテナ参照 14 件、静的 Security / CA 境界、`git diff --check` は合格
 
 ## 9. これまでの主な意思決定の流れ(時系列要約)
 
