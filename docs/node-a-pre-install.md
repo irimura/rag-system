@@ -52,6 +52,13 @@ VPC・サブネット・SG が [aws-provisioning.md](aws-provisioning.md) §1.1�
 dlami_owner=amazon
 dlami_name='Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04)*'
 dlami=$(aws ec2 describe-images --owners ${dlami_owner} --filters "Name=name,Values=${dlami_name}" "Name=state,Values=available" --query 'sort_by(Images,&CreationDate)[-1].ImageId' --output text)
+target_hostname=llm-001
+ip_llm=192.168.0.10
+
+cat > user-data-${target_hostname}.sh <<EOF
+#!/bin/bash
+hostnamectl set-hostname ${target_hostname}
+EOF
 
 llm_id=$(aws ec2 run-instances \
   --image-id "${dlami}" \
@@ -59,12 +66,15 @@ llm_id=$(aws ec2 run-instances \
   --key-name "${key_name}" \
   --subnet-id "${subnet_id}" \
   --security-group-ids "${sg_id}" \
+  --private-ip-address "${ip_llm}" \
   --no-associate-public-ip-address \
   --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=200,VolumeType=gp3}" \
   --metadata-options "HttpTokens=required" \
-  --tag-specifications "ResourceType=instance,Tags=[{Key=Project,Value=${project}},{Key=Name,Value=llm-001}]" \
+  --user-data "file://user-data-${target_hostname}.sh" \
+  --tag-specifications "ResourceType=instance,Tags=[{Key=Project,Value=${project}},{Key=Name,Value=${target_hostname}}]" \
   --query 'Instances[0].InstanceId' --output text)
 aws ec2 wait instance-running --instance-ids ${llm_id}
+rm -v user-data-${target_hostname}.sh
 ```
 
 ### 3.3 接続(EICE)

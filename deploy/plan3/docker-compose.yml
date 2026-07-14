@@ -4,7 +4,7 @@
 # 外部公開は nginx(80/443)のみ。他は 127.0.0.1 バインド
 services:
   nginx:
-    image: nginx:stable
+    image: nginx:1.30.3
     ports:
       - "80:80"
       - "443:443"
@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
 
   open-webui:
-    image: ghcr.io/open-webui/open-webui:main
+    image: ghcr.io/open-webui/open-webui:v0.9.4
     environment:
       - OPENAI_API_BASE_URL=http://rag-api:8000/v1
       - OPENAI_API_KEY=dummy
@@ -35,19 +35,40 @@ services:
     build: ./rag-api
     ports:
       - "127.0.0.1:8000:8000"
-    env_file: .env
+    environment:
+      - VLLM_BASE_URL=${VLLM_BASE_URL}
+      - VLLM_MODEL=${VLLM_MODEL}
+      - VLLM_API_KEY=${VLLM_API_KEY}
+      - RAG_MODEL_NAME=${RAG_MODEL_NAME:-knowledge-rag}
+      - OPENSEARCH_URL=${OPENSEARCH_URL}
+      - OS_CA_CERT=${OS_CA_CERT:-/app/certs/root-ca.pem}
+      - OS_INDEX=${OS_INDEX:-knowledge}
+      - OS_USERNAME=rag_api
+      - OS_PASSWORD=${OS_RAG_PASSWORD}
+      - TEI_EMBED_URL=${TEI_EMBED_URL:-http://tei-embed:80}
+      - TEI_RERANK_URL=${TEI_RERANK_URL:-http://tei-rerank:80}
+      - RETRIEVE_K=${RETRIEVE_K:-20}
+      - SEARCH_K=${SEARCH_K:-30}
+      - RERANK_TOP_N=${RERANK_TOP_N:-5}
+      - RERANK_THRESHOLD=${RERANK_THRESHOLD:-0.1}
+      - MAX_RETRIES=${MAX_RETRIES:-2}
+    volumes:
+      - ./rag-api/certs/root-ca.pem:/app/certs/root-ca.pem:ro
     depends_on:
-      - opensearch
-      - tei-embed
-      - tei-rerank
+      security-init:
+        condition: service_completed_successfully
+      tei-embed:
+        condition: service_started
+      tei-rerank:
+        condition: service_started
     restart: unless-stopped
 
   opensearch:
     build: ./opensearch          # analysis-kuromoji プラグイン入りイメージ
     environment:
       - discovery.type=single-node
-      - DISABLE_SECURITY_PLUGIN=true   # 内部ネットワーク限定運用。外部公開時は必ず有効化する
       - bootstrap.memory_lock=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
       - OPENSEARCH_JAVA_OPTS=-Xms${OS_HEAP:-4g} -Xmx${OS_HEAP:-4g}
     ulimits:
       memlock:
@@ -60,10 +81,32 @@ services:
       - "127.0.0.1:9200:9200"
     volumes:
       - opensearch-data:/usr/share/opensearch/data
+    networks:
+      default:
+        aliases:
+          - node-0.example.com
     restart: unless-stopped
 
+  # 初期管理者で最小権限の rag-api / ingest ユーザーを冪等作成する一回実行サービス
+  security-init:
+    build: ./rag-api
+    command: ["python", "init_security.py"]
+    environment:
+      - OPENSEARCH_URL=${OPENSEARCH_URL}
+      - OS_CA_CERT=${OS_CA_CERT:-/app/certs/root-ca.pem}
+      - OS_INDEX=${OS_INDEX:-knowledge}
+      - OS_USERNAME=admin
+      - OS_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
+      - OS_RAG_PASSWORD=${OS_RAG_PASSWORD}
+      - OS_INGEST_PASSWORD=${OS_INGEST_PASSWORD}
+    volumes:
+      - ./rag-api/certs/root-ca.pem:/app/certs/root-ca.pem:ro
+    depends_on:
+      - opensearch
+    restart: "no"
+
   postgres:
-    image: postgres:16
+    image: postgres:16.14
     environment:
       - POSTGRES_USER=openwebui
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -73,7 +116,7 @@ services:
     restart: unless-stopped
 
   tei-embed:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.3
     command: ["--model-id", "${EMBED_MODEL}"]
     ports:
       - "127.0.0.1:8081:80"
@@ -82,7 +125,7 @@ services:
     restart: unless-stopped
 
   tei-rerank:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.3
     command: ["--model-id", "${RERANK_MODEL}"]
     ports:
       - "127.0.0.1:8082:80"
@@ -95,13 +138,26 @@ services:
     build: ./rag-api
     profiles: ["ingest"]
     command: ["python", "ingest.py"]
-    env_file: .env
+    environment:
+      - OPENSEARCH_URL=${OPENSEARCH_URL}
+      - OS_CA_CERT=${OS_CA_CERT:-/app/certs/root-ca.pem}
+      - OS_INDEX=${OS_INDEX:-knowledge}
+      - OS_USERNAME=ingest
+      - OS_PASSWORD=${OS_INGEST_PASSWORD}
+      - TEI_EMBED_URL=${TEI_EMBED_URL:-http://tei-embed:80}
+      - EMBED_DIM=${EMBED_DIM:-1024}
+      - CHUNK_SIZE=${CHUNK_SIZE:-500}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-100}
+      - DOCS_DIR=${DOCS_DIR:-/data/documents}
     volumes:
       - ./documents:/data/documents:ro
       - ./opensearch/index-mapping.json:/app/index-mapping.json:ro
+      - ./rag-api/certs/root-ca.pem:/app/certs/root-ca.pem:ro
     depends_on:
-      - opensearch
-      - tei-embed
+      security-init:
+        condition: service_completed_successfully
+      tei-embed:
+        condition: service_started
 
 volumes:
   open-webui-data:

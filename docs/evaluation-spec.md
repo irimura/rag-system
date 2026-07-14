@@ -15,7 +15,7 @@ flowchart LR
     subgraph L1["レベル1: Retrieval 評価(決定的・高速)"]
         R1["Retriever 単体"]
         R2["Retriever + Rerank"]
-        M1["Hit Rate@k / MRR / nDCG"]
+        M1["Hit Rate@k / Evidence Recall@k /<br/>MRR / nDCG"]
         R1 & R2 --> M1
     end
 
@@ -40,12 +40,14 @@ flowchart LR
 
 | 指標 | 定義 | 意味 |
 |---|---|---|
-| **Hit Rate@k(Recall@k)** | 上位 k 件に正解根拠が 1 つでも含まれる質問の割合 | 「探せているか」の最重要指標 |
+| **Hit Rate@k** | 上位 k 件に正解根拠が 1 つでも含まれる質問の割合 | 「少なくとも 1 件探せているか」 |
+| **Evidence Recall@k** | 質問ごとの正解根拠数に対する、上位 k 件で取得できた一意な根拠数の割合 | multi-hop に必要な根拠を網羅できているか |
 | **MRR@k** | 最初に正解が現れた順位の逆数(1/rank)の平均 | 「上位に出せているか」 |
-| **nDCG@k** | 順位に応じた減衰付きゲインの正規化和 | 正解が複数ある場合の順位品質 |
+| **nDCG@k** | 一意な正解根拠の順位に応じた減衰付きゲインの正規化和。IDCG は取得結果ではなく `min(evidence 数, k)` 件を理想順位に置いて計算 | 複数根拠の順位品質 |
 
-- k は **LLM に渡す件数(k=5)** と **Rerank 前の候補数(k=20)** の 2 点で測る
-- 「Rerank 前の Hit Rate@20」と「Rerank 後の Hit Rate@5」を比べると、ボトルネックが Retriever と Reranker のどちらにあるか切り分けられる
+- k は **LLM に渡す件数(`RERANK_TOP_N`、案2の既定 k=4 / 案3の既定 k=5)** と **Rerank 前の候補数(`RETRIEVE_K`、案2/3の既定 k=20)** の 2 点で測る。評価スクリプトは対象 rag-api が返す実設定値を使用する
+- 同じ evidence に一致するチャンクを複数取得しても、Evidence Recall と nDCG では最初の 1 件だけを加点する
+- 案2の既定では「Rerank 前の Hit Rate@20」と「Rerank 後の Hit Rate@4」を比べると、ボトルネックが Retriever と Reranker のどちらにあるか切り分けられる
 
 ### 2.2 Generation 指標(レベル2 / Ragas)
 
@@ -74,12 +76,13 @@ flowchart LR
 | `category` | string | ○ | §4 のテスト観点 ID |
 | `question` | string | ○ | ユーザー質問(実際の言い回しで書く) |
 | `ground_truth` | string | ○ | 模範回答(採点基準になる事実を含める) |
-| `evidence` | array | ○ | 正解根拠。`doc_id`(文書識別子)と `quote`(根拠となる文字列の一部)の配列 |
+| `evidence` | array | ○ | 正解根拠。監査用の `doc_id`(文書識別子)と、採点に使う `quote`(根拠となる文字列の一部)の配列。answerable ケースでは `quote` 必須 |
 | `answerable` | bool | ○ | コーパスから回答可能か(`false` = 該当なしケース) |
 | `history` | array | - | 会話文脈依存ケースの直前のやりとり |
 | `notes` | string | - | 作成意図・注意点 |
 
-- Hit Rate 判定は「取得チャンクの `doc_id` 一致」または「チャンク本文への `quote` 部分一致」で行う(チャンク分割を変えても評価データを作り直さなくて済むよう、**quote は分割境界に依存しない短い文字列**にする)
+- 正解判定は「チャンク本文への `quote` 部分一致」だけで行う。`doc_id` は根拠文書の追跡・監査には使うが、同一文書内の無関係チャンクを正解にしないため採点には使わない
+- チャンク分割を変えても評価データを作り直さなくて済むよう、**quote は分割境界に依存しない短い文字列**にする
 
 ### 3.2 件数と作成方法
 
@@ -129,7 +132,7 @@ flowchart LR
 ### 5.2 手順
 
 1. コーパスを取り込み、インデックスを構築する(取り込みログを保存)
-2. **レベル1**: ゴールデンデータセットの全質問で Retriever(+Rerank)を実行し、Hit Rate@k / MRR@k / nDCG@k を算出
+2. **レベル1**: ゴールデンデータセットの全質問で rag-api と同じ Retriever(+Rerank)経路を実行し、Hit Rate@k / Evidence Recall@k / MRR@k / nDCG@k を算出
 3. レベル1 が目標未達の場合はここで止め、検索側(チャンク・Embedding・ハイブリッド・Rerank)を改善する(生成評価はスキップ — 検索が悪いと生成評価は無意味)
 4. **レベル2**: End-to-End で回答を生成し、Ragas で Faithfulness / Answer Relevancy / Answer Correctness / Context Precision・Recall を算出。TC07 は該当なし正答率を別途集計
 5. カテゴリ別(TC01〜TC10)にスコアを分解し、弱点カテゴリを特定する
@@ -140,7 +143,7 @@ flowchart LR
 | ツール | 用途 | ライセンス |
 |---|---|---|
 | **Ragas** | 生成評価(LLM-as-a-Judge)・テストセット合成 | Apache-2.0 |
-| 自作スクリプト(数十行) | レベル1 の Hit Rate / MRR / nDCG(quote 部分一致) | - |
+| 自作スクリプト | rag-api の評価用検索エンドポイントを利用した Hit Rate / Evidence Recall / MRR / nDCG(quote 部分一致) | - |
 | DeepEval / promptfoo | Ragas の代替・CI 組み込み(任意) | Apache-2.0 / MIT |
 
 Ragas の judge には vLLM(OpenAI 互換)をそのまま指定できるため、**評価もクラウド不要・無償**で完結する。
@@ -152,8 +155,9 @@ Ragas の judge には vLLM(OpenAI 互換)をそのまま指定できるため�
 | 指標 | 初期目標 | 備考 |
 |---|---|---|
 | Hit Rate@20(Rerank 前) | ≥ 0.90 | 未達なら Retriever 側を改善 |
-| Hit Rate@5(Rerank 後) | ≥ 0.85 | 未達(かつ @20 達成)なら Reranker を改善 |
-| MRR@5 | ≥ 0.70 | |
+| Hit Rate@4(Rerank 後) | ≥ 0.85 | 未達(かつ @20 達成)なら Reranker を改善 |
+| Evidence Recall@4 | 記録のみ | multi-hop ケースのベースライン取得後に目標を設定 |
+| MRR@4 | ≥ 0.70 | |
 | Faithfulness | ≥ 0.90 | 最重要。未達は捏造が起きている |
 | Answer Correctness | ≥ 0.75 | |
 | 該当なし正答率(TC07) | ≥ 0.90 | 「見つからない」と言えること |
@@ -163,10 +167,10 @@ Ragas の judge には vLLM(OpenAI 互換)をそのまま指定できるため�
 
 構成変更のたびに同一データセットで再計測し、以下の形式で記録する(`eval/experiments.md` 等)。
 
-| # | 日付 | 構成の変更点 | HR@5 | MRR@5 | Faith. | Correct. | TC07 | 備考 |
-|---|---|---|---|---|---|---|---|---|
-| 1 | 2026-07-09 | ベースライン(案1 相当) | - | - | - | - | - | |
-| 2 | | chunk 800→400 + bge-m3 | - | - | - | - | - | |
+| # | 日付 | 構成の変更点 | HR@4 | EvRecall@4 | MRR@4 | Faith. | Correct. | TC07 | 備考 |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 2026-07-09 | ベースライン(案1 相当) | - | - | - | - | - | - | |
+| 2 | | chunk 800→400 + bge-m3 | - | - | - | - | - | - | |
 
 - **1 回の実験で変えるのは 1 要素だけ**(チャンクサイズとモデルを同時に変えると原因が分からなくなる)
 - スコアが下がった変更は棄却し、記録は残す(同じ試行の繰り返しを防ぐ)

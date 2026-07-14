@@ -33,7 +33,7 @@ flowchart TB
 
         TEI_E["TEI(embed / CPU)<br/>BAAI/bge-m3"]
         TEI_R["TEI(rerank / CPU)<br/>bge-reranker-v2-m3"]
-        PG[("PostgreSQL<br/>会話履歴・ユーザー・<br/>取り込みジョブ管理")]
+        PG[("PostgreSQL<br/>会話履歴・ユーザー")]
 
         NGX --> OWUI
         OWUI --> ragapi
@@ -42,7 +42,6 @@ flowchart TB
         QT & HR -.->|"embed"| TEI_E
         RR --> TEI_R
         OWUI --> PG
-        ragapi --> PG
     end
 
     subgraph nodeA["Node A: GPU ノード(VRAM 40GB+ / 既存)"]
@@ -53,11 +52,10 @@ flowchart TB
     U -->|"HTTPS :443"| NGX
 
     subgraph ingestflow["取り込みパイプライン(ワーカー)"]
-        ING["ingest ワーカー<br/>Loader → Transformer<br/>(ジョブキュー管理)"]
+        ING["ingest バッチ<br/>Loader → Transformer"]
     end
     ING -->|"embed"| TEI_E
     ING -->|"BM25 + ベクトル<br/>同時インデクシング"| search
-    ING -.->|"ジョブ状態"| PG
 ```
 
 ## 特徴
@@ -68,7 +66,7 @@ flowchart TB
 | 短所 | OpenSearch は JVM ベースでメモリ要件が高い(最低 8GB、推奨 16GB〜)。運用ノウハウが必要。Node B のメモリが逼迫したら Node C(検索 DB 専用ノード)への分離を検討 |
 | 日本語対応 | `analysis-kuromoji`(または `analysis-sudachi`)プラグインで形態素解析ベースの BM25 を構成。同じ本文を bi-gram でも持つマルチフィールド + 同義語辞書(synonym filter)で未知語・表記ゆれの取りこぼしを削減 |
 | 順位統合 | BM25 とベクトルの結果を **RRF(Reciprocal Rank Fusion)** で統合(OpenSearch 2.19+ はネイティブ対応。LangChain 側の EnsembleRetriever でも実装可) |
-| LangGraph | 「検索結果が不十分なら検索し直す」「質問を分解する」等のループ・分岐を持つ検索フローをグラフとして実装 |
+| LangGraph | 「検索結果が不十分なら検索し直す」ループを持つ。再試行時は試行回数と検索済みクエリをプロンプトへ渡し、直前と異なる観点のクエリを生成する |
 | 代替 | OpenSearch の代わりに **Milvus**(BM25 内蔵の 2.5+)や **Qdrant + 疎ベクトル(bge-m3 の sparse 出力)** でも同アーキテクチャを実現可能 |
 
 ## ハイブリッド検索の実装例
@@ -126,12 +124,12 @@ flowchart LR
     NA --> E
 ```
 
-回答不能時に「見つからない」と返す分岐を明示的に持つことで、ハルシネーション(それらしい捏造回答)を抑制します。
+回答不能時に「見つからない」と返す分岐を明示的に持つことで、ハルシネーション(それらしい捏造回答)を抑制します。再検索では元の質問だけでなく、試行回数とそれまでの検索クエリを vLLM へ渡すため、temperature 0 でも毎回同一の書き換えプロンプトにはなりません。
 
 ## 運用ポイント
 
 - **メモリ設計**: OpenSearch の JVM ヒープはホストの 50% 以下・32GB 以下。HNSW インデックスはヒープ外メモリを使うため余裕を持たせる
 - **ノード分割の拡張パス**: 全コンポーネントが HTTP で疎結合なため、Node B のメモリが逼迫したら OpenSearch(と PostgreSQL)を Node C に移すだけでよい(compose ファイルの分割と接続 URL の変更のみ。アプリのコード変更は不要)。GPU ノード(Node A)は常に推論専用を維持する
 - **インデックス設計**: `knowledge-v1` のような versioned index + エイリアスで、埋め込みモデル変更時の全再インデックスを無停止で実施
-- **セキュリティ**: Nginx で TLS 終端(Let's Encrypt / 社内 CA)。OpenSearch Security プラグインでインデックスレベルのアクセス制御
+- **セキュリティ**: Nginx で TLS 終端(Let's Encrypt / 社内 CA)。OpenSearch Security Plugin を有効化し、`rag-api`(検索専用)と `ingest`(更新用)を別ユーザーにする。検証用 compose は固定イメージ内のデモ CA / 証明書でコンテナ間 TLS を検証し、本番では組織 CA のノード証明書へ交換する
 - **評価**: 検索品質は Ragas(OSS)等で Hit Rate / MRR / Faithfulness を定点観測し、チャンクサイズや重みの変更効果を計測する

@@ -4,7 +4,7 @@
 #       (Deep Learning Base OSS Nvidia Driver GPU AMI なら導入済み。docs/node-specs.md 参照)
 services:
   vllm:
-    image: vllm/vllm-openai:latest
+    image: vllm/vllm-openai:v0.23.0
     # イメージの ENTRYPOINT (python3 -m vllm.entrypoints.openai.api_server) に
     # 以下のオプションが引数として渡され、OpenAI 互換 API サーバが起動する
     command:

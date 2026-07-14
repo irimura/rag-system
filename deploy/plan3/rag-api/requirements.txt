@@ -1,13 +1,13 @@
-# 動作確認後は pip freeze でバージョンを固定すること
-fastapi
-uvicorn[standard]
-httpx
-langchain
-langchain-community
-langchain-openai
-langchain-huggingface
-langchain-text-splitters
-langgraph
-opensearch-py
-pypdf
-chardet
+# 検証ベースライン: 互換 API を保つためマイナー系列まで固定する
+fastapi~=0.116.0
+uvicorn[standard]~=0.35.0
+httpx~=0.28.0
+langchain~=0.3.0
+langchain-community~=0.3.0
+langchain-openai~=0.3.0
+langchain-huggingface~=0.3.0
+langchain-text-splitters~=0.3.0
+langgraph~=0.6.0
+opensearch-py~=2.8.0
+pypdf~=5.9.0
+chardet~=5.2.0

@@ -1,6 +1,7 @@
 """取り込みバッチ: documents/ 配下の PDF/MD/TXT を Chroma に登録する。
 
 実行: docker compose --profile ingest run --rm ingest
+既存コレクションは毎回削除し、documents/ 全体から再構築する。
 """
 import os
 
@@ -19,7 +20,12 @@ def main():
     chunks = split_documents(docs)
     print(f"文書 {len(docs)} 件 -> チャンク {len(chunks)} 件")
 
-    Chroma.from_documents(chunks, build_embeddings(), persist_directory=chroma_dir)
+    embeddings = build_embeddings()
+    existing = Chroma(persist_directory=chroma_dir, embedding_function=embeddings)
+    existing.delete_collection()
+    print("既存の Chroma コレクションを削除しました")
+
+    Chroma.from_documents(chunks, embeddings, persist_directory=chroma_dir)
     print(f"Chroma へ登録完了: {chroma_dir}")
 
 

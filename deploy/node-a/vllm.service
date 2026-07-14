@@ -1,6 +1,6 @@
 # Node A: vLLM OpenAI 互換サーバ(venv + systemd 方式の代替)
 # 配置: /etc/systemd/system/vllm.service
-# 前提: /opt/vllm/.venv に `pip install vllm` 済み、モデルは /opt/models 配下
+# 前提: /opt/vllm/.venv に `pip install "vllm~=0.23.0"` 済み、モデルは /opt/models 配下
 # ExecStart の <> 部分とAPI キーを実環境に合わせて書き換えること
 [Unit]
 Description=vLLM OpenAI-compatible API server

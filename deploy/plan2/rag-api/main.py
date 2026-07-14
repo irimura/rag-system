@@ -78,6 +78,17 @@ async def rerank(question: str, docs: list) -> list:
     return [docs[r["index"]] for r in ranked[:RERANK_TOP_N] if r["score"] >= RERANK_THRESHOLD]
 
 
+async def retrieve_docs(question: str) -> tuple[list, list]:
+    """本番応答と評価で共有する MMR 検索 + rerank 経路。"""
+    candidates = await get_retriever().ainvoke(question)
+    return candidates, await rerank(question, candidates)
+
+
+def serialize_doc(doc) -> dict:
+    """評価用エンドポイントへ必要最小限の Document 情報を返す。"""
+    return {"page_content": doc.page_content, "metadata": doc.metadata}
+
+
 def sources_footer(docs: list) -> str:
     sources = sorted({os.path.basename(d.metadata.get("source", "不明")) for d in docs})
     return "\n\n---\n参考資料: " + " / ".join(sources) if sources else ""
@@ -94,6 +105,10 @@ class ChatRequest(BaseModel):
     stream: bool = False
 
 
+class RetrievalRequest(BaseModel):
+    question: str
+
+
 def completion_chunk(chunk_id: str, created: int, content: str | None, finish: str | None = None) -> str:
     delta = {"content": content} if content is not None else {}
     body = {"id": chunk_id, "object": "chat.completion.chunk", "created": created,
@@ -105,6 +120,23 @@ def completion_chunk(chunk_id: str, created: int, content: str | None, finish: s
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.post("/internal/evaluation/retrieve")
+async def evaluation_retrieve(req: RetrievalRequest):
+    """評価専用。認可は設けず、ホスト公開だけ Compose で 127.0.0.1 に限定する。"""
+    if not req.question.strip():
+        raise HTTPException(status_code=400, detail="question が空です")
+    candidates, docs = await retrieve_docs(req.question)
+    return {
+        "candidates": [serialize_doc(doc) for doc in candidates],
+        "reranked": [serialize_doc(doc) for doc in docs],
+        "settings": {
+            "retrieve_k": RETRIEVE_K,
+            "rerank_top_n": RERANK_TOP_N,
+            "rerank_threshold": RERANK_THRESHOLD,
+        },
+    }
 
 
 @app.get("/v1/models")
@@ -119,8 +151,7 @@ async def chat_completions(req: ChatRequest):
     if not question:
         raise HTTPException(status_code=400, detail="user メッセージがありません")
 
-    docs = await get_retriever().ainvoke(question)
-    docs = await rerank(question, docs)
+    _, docs = await retrieve_docs(question)
     chunk_id = f"chatcmpl-{uuid.uuid4().hex}"
     created = int(time.time())
 

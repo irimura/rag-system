@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """レベル2: Generation 評価スクリプト(案2 構成向けサンプル)。
 
-検索(レベル1 と同一ロジック)+ 生成(vLLM、rag-api と同一プロンプト)を実行し、
+rag-api の本番 OpenAI 互換 API で検索 + 生成を実行し、
 1) TC07 の該当なし正答率(機械判定)
 2) answerable ケースの Ragas 採点(judge = vLLM / embeddings = TEI)
 を出力する。生成結果は answers.jsonl に保存される。
 
-注意: Ragas は API 変更が多い。本スクリプトは ragas 0.2 系を想定したサンプルであり、
-      実行環境のバージョンに合わせて import と evaluate 呼び出しを調整すること。
+注意: 本スクリプトは requirements.txt で固定した ragas 0.2 系 API を使用する。
+      0.4 系へ更新する場合は移行ガイドに従い evaluate と metrics API を同時に変更すること。
 """
 import argparse
 import json
@@ -15,48 +15,39 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "level1"))
-from run_level1 import embed, load_cases, rerank, search  # noqa: E402
+from run_level1 import RAG_API_URL, load_cases, retrieve  # noqa: E402
 
 VLLM_BASE_URL = os.environ["VLLM_BASE_URL"]
 VLLM_MODEL = os.environ["VLLM_MODEL"]
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "dummy")
 GOLDEN_PATH = os.getenv("GOLDEN_PATH", "../../eval/golden_dataset.sample.jsonl")
-RETRIEVE_K = int(os.getenv("RETRIEVE_K", "20"))
-FINAL_K = int(os.getenv("FINAL_K", "5"))
 ANSWERS_PATH = os.getenv("ANSWERS_PATH", "answers.jsonl")
 NO_ANSWER_PHRASE = "資料からは回答できません"
 
-# deploy/plan2/rag-api/main.py と同一のプロンプト(変更したら両方直すこと)
-PROMPT = """以下のコンテキストのみに基づいて日本語で回答してください。
-コンテキストに答えが含まれない場合は、推測せず「資料からは回答できません」と答えてください。
 
-# コンテキスト
-{context}
+def generate_answer(question: str) -> str:
+    """rag-api の本番 OpenAI 互換 API を呼び、検索・閾値・回答不能分岐・生成を共有する。"""
+    import httpx
 
-# 質問
-{question}"""
-
-
-def generate_answer(question: str, contexts: list[str]) -> str:
-    from langchain_openai import ChatOpenAI
-    llm = ChatOpenAI(base_url=VLLM_BASE_URL, api_key=VLLM_API_KEY,
-                     model=VLLM_MODEL, temperature=0)
-    context = "\n\n".join(f"[{i + 1}] {c}" for i, c in enumerate(contexts))
-    return llm.invoke(PROMPT.format(context=context, question=question)).content
+    with httpx.Client(timeout=180) as client:
+        res = client.post(f"{RAG_API_URL}/v1/chat/completions", json={
+            "model": "knowledge-rag",
+            "messages": [{"role": "user", "content": question}],
+            "stream": False,
+        })
+        res.raise_for_status()
+        return res.json()["choices"][0]["message"]["content"]
 
 
 def run_pipeline(cases: list[dict]) -> list[dict]:
     records = []
     for case in cases:
-        # 会話文脈依存(TC09)は履歴を質問に前置してから検索する(簡易版)
+        # rag-api は最後の user メッセージだけを検索に使う。TC09 もその現状を評価する。
         question = case["question"]
-        if case.get("history"):
-            prefix = " / ".join(m["content"] for m in case["history"])
-            question = f"{prefix} という文脈での質問: {question}"
 
-        chunks = rerank(question, search(embed(question), RETRIEVE_K), FINAL_K)
+        chunks = retrieve(question)["reranked"]
         contexts = [c.get("page_content", "") for c in chunks]
-        answer = generate_answer(question, contexts)
+        answer = generate_answer(question)
         records.append({
             "id": case["id"], "category": case["category"],
             "user_input": case["question"], "retrieved_contexts": contexts,

@@ -1,7 +1,7 @@
 """取り込みバッチ: documents/ 配下の PDF/MD/TXT を Qdrant に登録する。
 
 実行: docker compose --profile ingest run --rm ingest
-全再構築: FORCE_RECREATE=1 docker compose --profile ingest run --rm ingest
+既存コレクションは毎回削除し、documents/ 全体から再構築する。
 """
 import os
 
@@ -24,7 +24,7 @@ def main():
         embeddings,
         url=os.getenv("QDRANT_URL", "http://qdrant:6333"),
         collection_name=os.getenv("QDRANT_COLLECTION", "knowledge"),
-        force_recreate=os.getenv("FORCE_RECREATE", "0") == "1",
+        force_recreate=True,
     )
     print("Qdrant へ登録完了")
 

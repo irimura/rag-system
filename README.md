@@ -6,7 +6,7 @@
   - vLLM の要求スペック(ソフトウェア): **NVIDIA Driver(CUDA 12.8 対応版)+ NVIDIA Container Toolkit**
   - 上記要件を満たす推論専用の GPU ノード(Node A)として扱う
 - 方針:
-  - **すべて無償の OSS** で構成する(ライセンス一覧は末尾参照)
+  - **無償利用可・ソース公開**のソフトウェアで構成する(ライセンス一覧は末尾参照)
   - **クラウド固有のマネージドサービスは使用しない**(全コンポーネントをセルフホスト)
   - オーケストレーションは **LangChain** を使用
   - 全案共通で **GPU ノード(Node A)とアプリ+データノード(Node B)の 2 ノード構成** を基本とする(§2 参照)
@@ -142,7 +142,7 @@ flowchart LR
 | Rerank | プロセス内 CrossEncoder | TEI rerank | TEI rerank |
 | 検索方式 | ベクトルのみ | ベクトル + MMR | **ハイブリッド(BM25 + ベクトル)+ RRF** |
 | 会話履歴 | なし(メモリ) | Open WebUI 内蔵(SQLite) | PostgreSQL |
-| デプロイ(Node B) | venv + systemd | Docker Compose | Docker Compose |
+| デプロイ(Node B) | Docker Compose(venv + systemd は代替) | Docker Compose | Docker Compose |
 | 想定規模 | 個人・PoC(〜数千文書) | 部門(〜数十万チャンク) | 全社(数百万チャンク〜) |
 | vLLM 以外の GPU | 不要(CPU で完結) | 不要(TEI は CPU 版。取り込み高速化に任意で追加) | 任意(取り込み・rerank 高速化に Node B へ小型 GPU 追加を検討) |
 | Node B の RAM 目安 | 8GB〜 | 16GB〜 | 32GB〜(OpenSearch ヒープ含む) |

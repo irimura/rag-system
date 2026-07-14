@@ -15,13 +15,14 @@ from fastapi.responses import StreamingResponse
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
-from opensearchpy import OpenSearch
 from pydantic import BaseModel
+
+from opensearch_client import build_opensearch_client
+from query_rewrite import build_rewrite_prompt
 
 VLLM_BASE_URL = os.environ["VLLM_BASE_URL"]
 VLLM_MODEL = os.environ["VLLM_MODEL"]
 RAG_MODEL_NAME = os.getenv("RAG_MODEL_NAME", "knowledge-rag")
-OPENSEARCH_URL = os.getenv("OPENSEARCH_URL", "http://opensearch:9200")
 INDEX = os.getenv("OS_INDEX", "knowledge")
 TEI_EMBED_URL = os.getenv("TEI_EMBED_URL", "http://tei-embed:80")
 TEI_RERANK_URL = os.getenv("TEI_RERANK_URL", "http://tei-rerank:80")
@@ -41,11 +42,6 @@ PROMPT = """以下のコンテキストのみに基づいて日本語で回答�
 # 質問
 {question}"""
 
-REWRITE_PROMPT = """次の質問で文書検索をしましたが、関連する文書が見つかりませんでした。
-同じ内容を別の言葉(同義語・正式名称・漢語/和語の言い換え)で表した検索クエリを 1 つだけ出力してください。
-説明は不要です。
-
-質問: {question}"""
 
 NO_ANSWER = "資料からは回答できません。関連する文書が見つかりませんでした。"
 
@@ -56,7 +52,7 @@ llm = ChatOpenAI(
     temperature=0,
 )
 embeddings = HuggingFaceEndpointEmbeddings(model=TEI_EMBED_URL)
-os_client = OpenSearch(OPENSEARCH_URL)
+os_client = build_opensearch_client()
 
 
 # --- ハイブリッド検索 ---
@@ -105,12 +101,17 @@ class RagState(TypedDict):
     docs: list[dict]
     answer: str
     attempts: int
+    previous_queries: list[str]
 
 
 async def node_rewrite(state: RagState) -> dict:
     if state["attempts"] == 0:
         return {"query": state["question"]}          # 初回は元の質問で検索
-    res = await llm.ainvoke(REWRITE_PROMPT.format(question=state["question"]))
+    res = await llm.ainvoke(build_rewrite_prompt(
+        question=state["question"],
+        previous_queries=state["previous_queries"],
+        attempt=state["attempts"],
+    ))
     return {"query": res.content.strip()}
 
 
@@ -118,7 +119,11 @@ async def node_retrieve(state: RagState) -> dict:
     vector = await embeddings.aembed_query(state["query"])
     fused = rrf_fuse([bm25_search(state["query"]), knn_search(vector)])
     docs = await rerank(state["question"], fused)
-    return {"docs": docs, "attempts": state["attempts"] + 1}
+    return {
+        "docs": docs,
+        "attempts": state["attempts"] + 1,
+        "previous_queries": [*state["previous_queries"], state["query"]],
+    }
 
 
 def route_grade(state: RagState) -> str:
@@ -200,7 +205,8 @@ async def chat_completions(req: ChatRequest):
                             detail=f"インデックス '{INDEX}' がありません。先に ingest を実行してください。")
 
     result = await graph.ainvoke(
-        {"question": question, "query": "", "docs": [], "answer": "", "attempts": 0})
+        {"question": question, "query": "", "docs": [], "answer": "",
+         "attempts": 0, "previous_queries": []})
     content = result["answer"] + (sources_footer(result["docs"]) if result["docs"] else "")
 
     resp_id = f"chatcmpl-{uuid.uuid4().hex}"

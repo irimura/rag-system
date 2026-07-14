@@ -4,7 +4,7 @@ BM25(kuromoji + bi-gram)とベクトル(knn_vector)を同じインデックス�
 インデックス定義: opensearch/index-mapping.json
 
 実行: docker compose --profile ingest run --rm ingest
-全再構築: FORCE_RECREATE=1 docker compose --profile ingest run --rm ingest
+既存インデックスは毎回削除し、documents/ 全体から再構築する。
 """
 import json
 import os
@@ -12,24 +12,24 @@ import os
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from opensearchpy import OpenSearch, helpers
 
+from opensearch_client import build_opensearch_client
+
 from common import load_documents, split_documents
 
-OPENSEARCH_URL = os.getenv("OPENSEARCH_URL", "http://opensearch:9200")
 INDEX = os.getenv("OS_INDEX", "knowledge")
 EMBED_DIM = int(os.getenv("EMBED_DIM", "1024"))
 BATCH = 32
 
 
-def ensure_index(client: OpenSearch):
-    if os.getenv("FORCE_RECREATE", "0") == "1" and client.indices.exists(INDEX):
+def recreate_index(client: OpenSearch):
+    if client.indices.exists(INDEX):
         client.indices.delete(INDEX)
         print(f"インデックス {INDEX} を削除しました")
-    if not client.indices.exists(INDEX):
-        with open("index-mapping.json", encoding="utf-8") as f:
-            body = json.load(f)
-        body["mappings"]["properties"]["vector"]["dimension"] = EMBED_DIM
-        client.indices.create(INDEX, body=body)
-        print(f"インデックス {INDEX} を作成しました(dim={EMBED_DIM})")
+    with open("index-mapping.json", encoding="utf-8") as f:
+        body = json.load(f)
+    body["mappings"]["properties"]["vector"]["dimension"] = EMBED_DIM
+    client.indices.create(INDEX, body=body)
+    print(f"インデックス {INDEX} を作成しました(dim={EMBED_DIM})")
 
 
 def main():
@@ -39,8 +39,8 @@ def main():
     chunks = split_documents(docs)
     print(f"文書 {len(docs)} 件 -> チャンク {len(chunks)} 件")
 
-    client = OpenSearch(OPENSEARCH_URL)
-    ensure_index(client)
+    client = build_opensearch_client()
+    recreate_index(client)
     embeddings = HuggingFaceEndpointEmbeddings(model=os.getenv("TEI_EMBED_URL", "http://tei-embed:80"))
 
     for i in range(0, len(chunks), BATCH):

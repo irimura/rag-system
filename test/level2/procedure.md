@@ -15,8 +15,8 @@
 ```bash
 cd rag-system/test/level2
 python3 -m venv .venv && source .venv/bin/activate
-pip install httpx ragas langchain-openai langchain-huggingface datasets
-pip freeze > requirements.lock.txt   # Ragas は API 変更が多いため必ずバージョンを固定する
+pip install -r requirements.txt
+pip freeze > requirements.lock.txt   # 実際に解決されたパッチ版も実験記録として保存する
 ```
 
 ## 3. 実行手順
@@ -35,7 +35,7 @@ python run_level2.py --generate-only
 
 処理の流れ:
 
-1. ゴールデンデータセットの各ケースについて、検索(レベル1 と同一ロジック)→ 生成(vLLM、rag-api と同一プロンプト)を実行し、`answers.jsonl` に保存
+1. ゴールデンデータセットの各ケースについて、rag-api の評価用エンドポイントから採点用コンテキストを取得し、本番の `/v1/chat/completions` で検索・rerank 閾値・回答不能分岐・生成を実行して `answers.jsonl` に保存する
 2. **TC07(該当なし)**: 回答に「資料からは回答できません」が含まれるかを機械判定し、該当なし正答率を算出
 3. **answerable ケース**: Ragas で Faithfulness / Answer Correctness 等を採点(judge = vLLM、embeddings = TEI)
 
@@ -62,4 +62,4 @@ Answer Correctness     : 0.78
 - 実験管理表(`eval/experiments.md`)にスコアを追記し、`answers.jsonl` を実験 ID 付きで保存する(後から judge の採点を目視検証できるように)
 - **LLM-as-a-Judge のスコアは絶対値でなく相対比較に使う**。judge モデルや Ragas バージョンを変えたらベースラインから取り直す
 - スコアが疑わしいケースは `answers.jsonl` の該当行を目視確認する(judge の誤採点は一定数ある)
-- 本スクリプトは検索+生成を rag-api と同一ロジックで再現している(Ragas がコンテキスト原文を必要とするため)。rag-api 経由の E2E 確認は `cases/` の手順書(WebUI 操作)で補完する
+- 採点用コンテキストは rag-api の `/internal/evaluation/retrieve`、回答は本番と同じ `/v1/chat/completions` から取得する。検索と回答は別リクエストになるが、どちらも rag-api 内の同じ検索関数を通る

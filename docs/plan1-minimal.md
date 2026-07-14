@@ -2,7 +2,7 @@
 
 WebUI・RAG ロジック・ベクトル DB を **1 つの Python プロセス(Chainlit)に同居**させる最小構成。
 vLLM が稼働する GPU ノード(Node A)とは分離し、**アプリノード(Node B)上の 1 プロセス**で完結させます。
-Node B 側は Docker 不要で venv + systemd だけで動き、最速で RAG を体験・検証できます。
+Node B 側の標準デプロイは Docker Compose で、必要に応じて venv + systemd だけの代替構成も選べます。
 
 > **構築ファイル**: [deploy/plan1/](../deploy/plan1/)(Docker 版)/ 手順: [deployment-guide.md](deployment-guide.md)。本書後半の venv + systemd 手順はコンテナを使わない場合の代替。
 
@@ -52,11 +52,10 @@ flowchart TB
 ## セットアップ手順(概要)
 
 ```bash
-# Node B(アプリノード)上
+# Node B(アプリノード)上。リポジトリルートから実行
 python3 -m venv ~/rag/.venv && source ~/rag/.venv/bin/activate
-pip install langchain langchain-community langchain-openai langchain-huggingface \
-            langchain-chroma chainlit sentence-transformers \
-            unstructured[md] pypdf
+pip install "torch~=2.7.0" --index-url https://download.pytorch.org/whl/cpu
+pip install -r deploy/plan1/app/requirements.txt
 ```
 
 ## 実装例
@@ -66,7 +65,7 @@ pip install langchain langchain-community langchain-openai langchain-huggingface
 ```python
 from langchain_community.document_loaders import DirectoryLoader, PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_huggingface import HuggingFaceEmbeddings
+from common import build_embeddings
 from langchain_chroma import Chroma
 
 # 1. Document Loader
@@ -81,7 +80,9 @@ splitter = RecursiveCharacterTextSplitter(
 chunks = splitter.split_documents(docs)
 
 # 3. Embedding + 4. Vector store
-embeddings = HuggingFaceEmbeddings(model_name="intfloat/multilingual-e5-large")
+embeddings = build_embeddings()  # e5 系では query:/passage: prefix を自動付与
+existing = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
+existing.delete_collection()     # 全コーパスを投入する前に既存コレクションを削除
 Chroma.from_documents(chunks, embeddings, persist_directory="./chroma_db")
 ```
 
@@ -90,7 +91,7 @@ Chroma.from_documents(chunks, embeddings, persist_directory="./chroma_db")
 ```python
 import chainlit as cl
 from langchain_openai import ChatOpenAI
-from langchain_huggingface import HuggingFaceEmbeddings
+from common import build_embeddings
 from langchain_chroma import Chroma
 from langchain.retrievers import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors import CrossEncoderReranker
@@ -100,7 +101,7 @@ llm = ChatOpenAI(  # Node A(GPU ノード)の vLLM を指定
     base_url="http://node-a.example.internal:8080/v1", api_key="dummy",
     model="your-hf-model-name",
 )
-embeddings = HuggingFaceEmbeddings(model_name="intfloat/multilingual-e5-large")
+embeddings = build_embeddings()  # e5 系では query:/passage: prefix を自動付与
 vectorstore = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
 
 # 5. Retriever(広めに 20 件)→ 6. Rerank(上位 4 件に圧縮)

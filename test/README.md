@@ -6,7 +6,7 @@
 
 | パス | 内容 |
 |---|---|
-| [level1/procedure.md](level1/procedure.md) | **レベル1: Retrieval 評価**の実行手順(Hit Rate / MRR / nDCG。LLM 不要・決定的) |
+| [level1/procedure.md](level1/procedure.md) | **レベル1: Retrieval 評価**の実行手順(Hit Rate / Evidence Recall / MRR / nDCG。LLM 不要・決定的) |
 | [level1/run_level1.py](level1/run_level1.py) | レベル1 実行スクリプト(案2 構成向けサンプル) |
 | [level2/procedure.md](level2/procedure.md) | **レベル2: Generation 評価**の実行手順(Ragas / 該当なし正答率) |
 | [level2/run_level2.py](level2/run_level2.py) | レベル2 実行スクリプト(案2 構成向けサンプル) |
@@ -36,5 +36,5 @@ flowchart LR
 
 - ゴールデンデータセット: [eval/golden_dataset.sample.jsonl](../eval/golden_dataset.sample.jsonl) の形式(仕様書 §3.1)。実運用では自ドメイン版を `eval/golden_dataset.jsonl` として作成し、環境変数 `GOLDEN_PATH` で指定する
 - サンプルスクリプトは **案2(Qdrant + TEI)構成の Node B 上での実行**を前提とする。案1(Chroma)/案3(OpenSearch)への読み替えは各手順書末尾の補足を参照
-- スクリプトは Node B の `127.0.0.1` に公開済みのデバッグポート(TEI 8081/8082、Qdrant 6333、rag-api 8000)を使うため、**追加のポート公開は不要**
+- スクリプトは Node B の `127.0.0.1` に公開済みの rag-api(8000)を使い、レベル2の judge 埋め込みだけ TEI(8081)を使う。Qdrant を評価コードから直接呼ばないため、**追加のポート公開は不要**
 - 判定に迷う結果は「不合格側」に倒して記録する(甘い判定は改善の機会を潰す)

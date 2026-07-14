@@ -60,7 +60,7 @@ flowchart TB
 ```yaml
 services:
   open-webui:
-    image: ghcr.io/open-webui/open-webui:main
+    image: ghcr.io/open-webui/open-webui:v0.9.4
     ports: ["3000:8080"]
     volumes: ["open-webui-data:/app/backend/data"]
     environment:
@@ -79,18 +79,18 @@ services:
       - TEI_RERANK_URL=http://tei-rerank:80
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.1
     ports: ["6333:6333"]
     volumes: ["qdrant-data:/qdrant/storage"]
 
   tei-embed:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.3
     command: ["--model-id", "BAAI/bge-m3"]
     ports: ["8081:80"]
     volumes: ["hf-cache:/data"]
 
   tei-rerank:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.3
     command: ["--model-id", "BAAI/bge-reranker-v2-m3"]
     ports: ["8082:80"]
     volumes: ["hf-cache:/data"]
@@ -133,9 +133,9 @@ async def chat(req: ChatRequest):
 
 ## 運用ポイント
 
-- **取り込み**: `docker compose run ingest`(または cron)で共有フォルダ・Wiki エクスポート等を定期取り込み。Qdrant はコレクションのエイリアス切替で「無停止の全再インデックス」が可能
+- **取り込み**: サンプル実装は `documents/` の全コーパスから既存コレクションを毎回全量再構築する。定期実行時も差分ファイルだけを渡さない。無停止化が必要な運用段階では Qdrant の別コレクション作成 + エイリアス切替へ拡張する
 - **バックアップ**: Qdrant のスナップショット API + Open WebUI のデータ volume をバックアップ
-- **監視**: 各コンテナの `/health`(TEI・Qdrant は標準装備)を healthcheck に設定
+- **監視**: サンプル compose は Docker healthcheck を未設定。運用時は rag-api / TEI の `/health` と Qdrant の `/readyz` を監視対象に設定する
 
 ## この案から次へ進む判断基準
 

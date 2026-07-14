@@ -3,7 +3,7 @@
 # デバッグ用ポート(qdrant/tei/rag-api)は 127.0.0.1 バインドで外部非公開
 services:
   open-webui:
-    image: ghcr.io/open-webui/open-webui:main
+    image: ghcr.io/open-webui/open-webui:v0.9.4
     ports:
       - "3000:8080"
     environment:
@@ -29,7 +29,7 @@ services:
     restart: unless-stopped
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.1
     ports:
       - "127.0.0.1:6333:6333"
     volumes:
@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
 
   tei-embed:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.3
     command: ["--model-id", "${EMBED_MODEL}"]
     ports:
       - "127.0.0.1:8081:80"
@@ -46,7 +46,7 @@ services:
     restart: unless-stopped
 
   tei-rerank:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.3
     command: ["--model-id", "${RERANK_MODEL}"]
     ports:
       - "127.0.0.1:8082:80"

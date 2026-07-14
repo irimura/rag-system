@@ -1,0 +1,6 @@
+# Ragas 0.2 API を使う検証ベースライン: マイナー系列まで固定
+httpx~=0.28.0
+ragas~=0.2.0
+langchain-openai~=0.3.0
+langchain-huggingface~=0.3.0
+datasets~=3.6.0

@@ -286,7 +286,7 @@ ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-003(案3)/ ssh -N ragsys-llm
 
 > - WebUI ポートを SG で外部公開する必要はない(トラフィックは 22 番トンネル内を通る)。
 > - `~/.ssh/config` へ追記(`>>`)するため既存の他ホスト設定は保持される。再実行すると重複登録になるので、作り直すときは古い `ragsys-*` ブロックを削除してから実行する。
-> - `StrictHostKeyChecking no` 等は AMI 再作成でホスト鍵が変わるため付けている(接続は EICE/IAM で保護済み。厳格運用なら外す)。
+> - `StrictHostKeyChecking no` 等は AMI 再作成でホスト鍵が変わる運用を簡略化するための受容済みトレードオフ。EICE/IAM はトンネル確立と指定インスタンスへの接続を認可するが、SSH ホスト鍵による接続先の真正性確認を代替しない。厳格運用ではこの 2 行を外し、`known_hosts` を管理する。
 > - 常用の多人数アクセスは EICE ではなく、VPN/Direct Connect 等の閉域から WebUI ポートへ直接(SG の `user_cidr` ルール)。
 
 ### 1.5 EC2 自動停止(毎日 18:00・EventBridge Scheduler)
@@ -479,10 +479,17 @@ instance_ids=$(aws ec2 describe-instances --filters "Name=tag:Project,Values=${p
 aws ec2 terminate-instances --instance-ids ${instance_ids}
 aws ec2 wait instance-terminated --instance-ids ${instance_ids}
 
-# 2) EICE(サブネットの ENI を解放。削除完了まで数分。専用 waiter なし)
+# 2) EICE(サブネットの ENI を解放。専用 waiter がないため、削除完了まで State をポーリング)
 aws ec2 delete-instance-connect-endpoint --instance-connect-endpoint-id ${eice_id}
-# State が返らなく(削除完了)なるまで確認する
-aws ec2 describe-instance-connect-endpoints --instance-connect-endpoint-ids ${eice_id} --query 'InstanceConnectEndpoints[0].State' --output text
+while true; do
+  eice_state=$(aws ec2 describe-instance-connect-endpoints --instance-connect-endpoint-ids ${eice_id} --query 'InstanceConnectEndpoints[0].State' --output text 2>/dev/null) || break
+  case "${eice_state}" in
+    delete-complete) break ;;
+    delete-failed) printf 'EICE deletion failed: %s\n' "${eice_id}" >&2; exit 1 ;;
+    *) printf 'EICE state: %s\n' "${eice_state}"; sleep 10 ;;
+  esac
+done
+printf 'EICE deleted: %s\n' "${eice_id}"
 
 # 3) NAT+IGW が残っていれば §2.2 を先に実施(IGW も §2.2 が削除する)
 
@@ -504,9 +511,10 @@ aws ec2 delete-vpc --vpc-id ${vpc_id}
 
 ```bash
 # AMI とスナップショットの削除(不要な世代のみ)
+# deregister 後は AMI から SnapshotId を取得できないため、先に保存する
+snap_id=$(aws ec2 describe-images --image-ids ${image_id} --query 'Images[0].BlockDeviceMappings[0].Ebs.SnapshotId' --output text)
 aws ec2 deregister-image --image-id ${image_id}
-snap_id=$(aws ec2 describe-images --image-ids ${image_id} --query 'Images[0].BlockDeviceMappings[0].Ebs.SnapshotId' --output text 2>/dev/null)
-# ↑ deregister 後は取得不可のため、必要なら deregister 前に snap_id を控えてから削除する
+# スナップショットも不要であることを確認してから実行
 # aws ec2 delete-snapshot --snapshot-id ${snap_id}
 
 # キーペア

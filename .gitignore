@@ -8,6 +8,7 @@ deploy/**/documents/*
 # TLS 証明書・秘密鍵
 deploy/plan3/nginx/certs/*
 !deploy/plan3/nginx/certs/.gitkeep
+deploy/plan3/rag-api/certs/root-ca.pem
 
 # Python
 __pycache__/

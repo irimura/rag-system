@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """レベル1: Retrieval 評価スクリプト(案2: Qdrant + TEI 構成向けサンプル)。
 
-Node B 上で実行し、127.0.0.1 に公開済みのデバッグポートを直接叩く。
-rag-api と同じ「TEI embed -> Qdrant 検索 -> TEI rerank」を再現して
-Hit Rate@K / MRR / nDCG を算出する。
+Node B 上で実行し、127.0.0.1 に公開済みの rag-api 評価用エンドポイントを叩く。
+rag-api 本番応答と同じ MMR 検索・TEI rerank の結果から
+Hit Rate@K / Evidence Recall@K / MRR / nDCG を算出する。
 
 使い方:
     python run_level1.py                       # 全件評価
@@ -15,88 +15,93 @@ import math
 import os
 from collections import defaultdict
 
-import httpx
-
-TEI_EMBED_URL = os.getenv("TEI_EMBED_URL", "http://localhost:8081")
-TEI_RERANK_URL = os.getenv("TEI_RERANK_URL", "http://localhost:8082")
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
-COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge")
+RAG_API_URL = os.getenv("RAG_API_URL", "http://localhost:8000")
 GOLDEN_PATH = os.getenv("GOLDEN_PATH", "../../eval/golden_dataset.sample.jsonl")
-RETRIEVE_K = int(os.getenv("RETRIEVE_K", "20"))   # Rerank 前の候補数
-FINAL_K = int(os.getenv("FINAL_K", "5"))          # Rerank 後の評価対象件数
-
-client = httpx.Client(timeout=60)
-
 
 def load_cases(path: str) -> list[dict]:
     with open(path, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
 
 
-def embed(text: str) -> list[float]:
-    res = client.post(f"{TEI_EMBED_URL}/embed", json={"inputs": [text]})
-    res.raise_for_status()
-    return res.json()[0]
+def retrieve(question: str) -> dict:
+    """rag-api 本番応答と共有された検索経路の候補・rerank 結果を取得する。"""
+    import httpx
+
+    with httpx.Client(timeout=60) as client:
+        res = client.post(
+            f"{RAG_API_URL}/internal/evaluation/retrieve",
+            json={"question": question})
+        res.raise_for_status()
+        return res.json()
 
 
-def search(vector: list[float], k: int) -> list[dict]:
-    """Qdrant 検索。langchain-qdrant の payload 形式(page_content / metadata)を返す。"""
-    res = client.post(
-        f"{QDRANT_URL}/collections/{COLLECTION}/points/search",
-        json={"vector": vector, "limit": k, "with_payload": True})
-    res.raise_for_status()
-    return [p["payload"] for p in res.json()["result"]]
-
-
-def rerank(question: str, chunks: list[dict], top_n: int) -> list[dict]:
-    res = client.post(f"{TEI_RERANK_URL}/rerank", json={
-        "query": question, "texts": [c.get("page_content", "") for c in chunks]})
-    res.raise_for_status()
-    ranked = sorted(res.json(), key=lambda x: x["score"], reverse=True)
-    return [chunks[r["index"]] for r in ranked[:top_n]]
-
-
-def is_hit(case: dict, chunk: dict) -> bool:
-    """quote の部分一致、または doc_id と source の一致で正解根拠と判定する。"""
+def matching_evidence(case: dict, chunk: dict) -> set[int]:
+    """本文に quote が含まれる正解根拠の添字を返す。doc_id だけでは加点しない。"""
     text = chunk.get("page_content", "")
-    source = str((chunk.get("metadata") or {}).get("source", ""))
-    for ev in case.get("evidence", []):
-        if ev.get("quote") and ev["quote"] in text:
-            return True
-        if ev.get("doc_id") and ev["doc_id"] in source:
-            return True
-    return False
+    matches = set()
+    for index, evidence in enumerate(case.get("evidence", [])):
+        if evidence.get("quote") and evidence["quote"] in text:
+            matches.add(index)
+    return matches
+
+
+def score_ranking(case: dict, chunks: list[dict], k: int) -> dict:
+    """同一 evidence の重複取得を二重加点せず、順位指標と網羅率を計算する。"""
+    evidence_count = len(case.get("evidence", []))
+    covered = set()
+    gain_flags = []
+    for chunk in chunks[:k]:
+        new_matches = matching_evidence(case, chunk) - covered
+        gain_flags.append(bool(new_matches))
+        covered.update(new_matches)
+
+    first_rank = next((i + 1 for i, hit in enumerate(gain_flags) if hit), None)
+    dcg = sum(1.0 / math.log2(i + 2) for i, hit in enumerate(gain_flags) if hit)
+    ideal_hits = min(evidence_count, k)
+    idcg = sum(1.0 / math.log2(i + 2) for i in range(ideal_hits))
+    return {
+        "hit": bool(covered),
+        "evidence_recall": len(covered) / evidence_count if evidence_count else 0.0,
+        "rr": 1.0 / first_rank if first_rank else 0.0,
+        "ndcg": dcg / idcg if idcg else 0.0,
+    }
+
+
+def score_case(
+        case: dict, candidates: list[dict], reranked: list[dict],
+        retrieve_k: int, final_k: int) -> dict:
+    pre = score_ranking(case, candidates, retrieve_k)
+    post = score_ranking(case, reranked, final_k)
+    return {
+        "hit_pre": pre["hit"],
+        "hit_post": post["hit"],
+        "evidence_recall_pre": pre["evidence_recall"],
+        "evidence_recall_post": post["evidence_recall"],
+        "rr": post["rr"],
+        "ndcg": post["ndcg"],
+        "candidates": candidates,
+        "reranked": reranked,
+        "retrieve_k": retrieve_k,
+        "final_k": final_k,
+    }
 
 
 def evaluate_case(case: dict) -> dict:
-    vector = embed(case["question"])
-    candidates = search(vector, RETRIEVE_K)
-    reranked = rerank(case["question"], candidates, FINAL_K)
-
-    hit_pre = any(is_hit(case, c) for c in candidates)
-    hit_flags = [is_hit(case, c) for c in reranked]
-    first_rank = next((i + 1 for i, h in enumerate(hit_flags) if h), None)
-
-    dcg = sum(1.0 / math.log2(i + 2) for i, h in enumerate(hit_flags) if h)
-    ideal_hits = min(sum(hit_flags), FINAL_K) or 1
-    idcg = sum(1.0 / math.log2(i + 2) for i in range(ideal_hits))
-    return {
-        "hit_pre": hit_pre,
-        "hit_post": first_rank is not None,
-        "rr": 1.0 / first_rank if first_rank else 0.0,
-        "ndcg": dcg / idcg if any(hit_flags) else 0.0,
-        "candidates": candidates,
-        "reranked": reranked,
-    }
+    result = retrieve(case["question"])
+    settings = result["settings"]
+    return score_case(
+        case, result["candidates"], result["reranked"],
+        settings["retrieve_k"], settings["rerank_top_n"])
 
 
 def show_verbose(case: dict, result: dict) -> None:
     print(f"\n[{case['id']}] {case['question']}")
     print(f"  evidence: {case.get('evidence')}")
     for i, c in enumerate(result["reranked"], 1):
-        mark = "HIT " if is_hit(case, c) else "    "
+        matches = matching_evidence(case, c)
+        mark = f"E{','.join(str(i + 1) for i in sorted(matches))}" if matches else "-"
         src = (c.get("metadata") or {}).get("source", "?")
-        print(f"  {mark}#{i} [{src}] {c.get('page_content', '')[:80]}...")
+        print(f"  {mark:5s} #{i} [{src}] {c.get('page_content', '')[:80]}...")
 
 
 def main() -> None:
@@ -120,25 +125,31 @@ def main() -> None:
             show_verbose(case, r)
 
     n = len(results)
+    retrieve_k = results[0]["retrieve_k"]
+    final_k = results[0]["final_k"]
     hr_pre = sum(r["hit_pre"] for r in results) / n
     hr_post = sum(r["hit_post"] for r in results) / n
+    recall_pre = sum(r["evidence_recall_pre"] for r in results) / n
+    recall_post = sum(r["evidence_recall_post"] for r in results) / n
     mrr = sum(r["rr"] for r in results) / n
     ndcg = sum(r["ndcg"] for r in results) / n
 
     print("\n=== レベル1: Retrieval 評価 ===")
     print(f"対象: {n} ケース(answerable のみ。TC07 は対象外)")
-    print(f"HitRate@{RETRIEVE_K} (Rerank 前): {hr_pre:.3f}")
-    print(f"HitRate@{FINAL_K}  (Rerank 後): {hr_post:.3f}")
-    print(f"MRR@{FINAL_K}                 : {mrr:.3f}")
-    print(f"nDCG@{FINAL_K}                : {ndcg:.3f}")
-    print(f"--- カテゴリ別 HitRate@{FINAL_K} ---")
+    print(f"HitRate@{retrieve_k} (Rerank 前): {hr_pre:.3f}")
+    print(f"HitRate@{final_k}  (Rerank 後): {hr_post:.3f}")
+    print(f"EvidenceRecall@{retrieve_k} (Rerank 前): {recall_pre:.3f}")
+    print(f"EvidenceRecall@{final_k}  (Rerank 後): {recall_post:.3f}")
+    print(f"MRR@{final_k}                 : {mrr:.3f}")
+    print(f"nDCG@{final_k}                : {ndcg:.3f}")
+    print(f"--- カテゴリ別 HitRate@{final_k} ---")
     for cat in sorted(by_cat):
         rs = by_cat[cat]
         hits = sum(r["hit_post"] for r in rs)
         print(f"{cat:24s}: {hits / len(rs):.3f} ({hits}/{len(rs)})")
 
     print("\n実験管理表用(eval/experiments.md に追記):")
-    print(f"| | | | {hr_post:.2f} | {mrr:.2f} | - | - | - | HR@{RETRIEVE_K}前={hr_pre:.2f} |")
+    print(f"| | | | {hr_post:.2f} | {recall_post:.2f} | {mrr:.2f} | - | - | - | HR@{retrieve_k}前={hr_pre:.2f} |")
 
 
 if __name__ == "__main__":

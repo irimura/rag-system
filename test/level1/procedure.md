@@ -1,4 +1,4 @@
-# レベル1 手順書 — Retrieval 評価(Hit Rate / MRR / nDCG)
+# レベル1 手順書 — Retrieval 評価(Hit Rate / Evidence Recall / MRR / nDCG)
 
 - 目的: Retriever(+Reranker)が正解根拠を上位に取得できているかを**決定的に**測定する
 - 特徴: LLM 不要・数分で完了・毎回同じ結果。構成変更のたびに必ず実行する
@@ -6,17 +6,17 @@
 
 ## 1. 前提条件
 
-- [ ] 案2 のサービス群が起動済み(`docker compose ps` で qdrant / tei-embed / tei-rerank が Up)
+- [ ] 案2 のサービス群が起動済み(`docker compose ps` で rag-api / qdrant / tei-embed / tei-rerank が Up)
 - [ ] 評価用コーパスの取り込みが完了している(`ingest` 実行済み)
 - [ ] ゴールデンデータセットが用意できている(サンプル: `eval/golden_dataset.sample.jsonl`)
-- [ ] 構成パラメータ(チャンクサイズ / Embedding モデル / k / top_n)を実験管理表に記録した
+- [ ] rag-api の構成パラメータ(チャンクサイズ / Embedding モデル / `RETRIEVE_K` / `RERANK_TOP_N` / `RERANK_THRESHOLD`)を実験管理表に記録した
 
 ## 2. 実行環境の準備(初回のみ、Node B 上)
 
 ```bash
 cd rag-system/test/level1
 python3 -m venv .venv && source .venv/bin/activate
-pip install httpx
+pip install -r requirements.txt
 ```
 
 ## 3. 実行手順
@@ -24,11 +24,11 @@ pip install httpx
 ### 3.1 全件評価
 
 ```bash
-# 既定値: TEI/Qdrant は localhost の公開ポート、データセットはサンプルを参照
+# 既定値: rag-api は localhost:8000、データセットはサンプルを参照
 python run_level1.py
 
-# 実運用データセット・パラメータを指定する場合
-GOLDEN_PATH=../../eval/golden_dataset.jsonl RETRIEVE_K=20 FINAL_K=5 python run_level1.py
+# 実運用データセットを指定する場合
+GOLDEN_PATH=../../eval/golden_dataset.jsonl python run_level1.py
 ```
 
 出力例(このまま実験管理表に転記できる Markdown 行も出力される):
@@ -37,10 +37,12 @@ GOLDEN_PATH=../../eval/golden_dataset.jsonl RETRIEVE_K=20 FINAL_K=5 python run_l
 === レベル1: Retrieval 評価 ===
 対象: 9 ケース(answerable のみ。TC07 は対象外)
 HitRate@20 (Rerank 前): 0.889
-HitRate@5  (Rerank 後): 0.778
-MRR@5                 : 0.712
-nDCG@5                : 0.745
---- カテゴリ別 HitRate@5 ---
+HitRate@4  (Rerank 後): 0.778
+EvidenceRecall@20 (Rerank 前): 0.833
+EvidenceRecall@4  (Rerank 後): 0.722
+MRR@4                 : 0.712
+nDCG@4                : 0.701
+--- カテゴリ別 HitRate@4 ---
 TC01_single_fact : 1.000 (1/1)
 ...
 ```
@@ -49,7 +51,7 @@ TC01_single_fact : 1.000 (1/1)
 
 ```bash
 python run_level1.py --case TC01-001 --verbose
-# 取得チャンクの順位・スコア・本文冒頭と、evidence 一致箇所が表示される
+# 取得チャンクの順位・本文冒頭と、一致した evidence 番号が表示される
 ```
 
 ## 4. 判定
@@ -57,8 +59,9 @@ python run_level1.py --case TC01-001 --verbose
 | 指標 | 初期目標 | 未達時の一次対応 |
 |---|---|---|
 | HitRate@20(Rerank 前) | ≥ 0.90 | Retriever 側の問題。チャンク分割・Embedding・(案3)ハイブリッド化を見直す |
-| HitRate@5(Rerank 後) | ≥ 0.85 | @20 が達成済みなら Reranker の問題。モデル・しきい値・候補数を見直す |
-| MRR@5 | ≥ 0.70 | 上位に押し込めていない。Rerank 導入/強化が定石 |
+| HitRate@4(Rerank 後) | ≥ 0.85 | @20 が達成済みなら Reranker の問題。モデル・しきい値・候補数を見直す |
+| EvidenceRecall@4 | 記録のみ | multi-hop で不足する根拠を特定し、候補数・チャンク分割を見直す |
+| MRR@4 | ≥ 0.70 | 上位に押し込めていない。Rerank 導入/強化が定石 |
 
 - **合格** → [レベル2](../level2/procedure.md) へ進む
 - **不合格** → 検索側を 1 要素だけ変更して再実行(レベル2 には進まない)。カテゴリ別スコアで弱点観点を特定し、`cases/` の該当手順書で深掘りする
