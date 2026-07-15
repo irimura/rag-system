@@ -1,22 +1,23 @@
-"""取り込みバッチ: documents/ 配下の PDF/MD/TXT を Qdrant に登録する。
-
-実行: docker compose --profile ingest run --rm ingest
-既存コレクションは毎回削除し、documents/ 全体から再構築する。
-"""
+"""取り込みバッチ: documents/<group>/ 配下の文書を Qdrant に登録する。"""
 import os
+from collections import Counter
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from langchain_qdrant import QdrantVectorStore
 
-from common import load_documents, split_documents
+from common import assign_group_metadata, load_documents, split_documents
 
 
 def main():
-    docs = load_documents(os.getenv("DOCS_DIR", "/data/documents"))
+    docs_dir = os.getenv("DOCS_DIR", "/data/documents")
+    docs = load_documents(docs_dir)
     if not docs:
         raise SystemExit("documents/ に文書がありません。PDF/MD/TXT を配置してください。")
+    assign_group_metadata(docs, docs_dir)
     chunks = split_documents(docs)
+    counts = Counter(chunk.metadata["group"] for chunk in chunks)
     print(f"文書 {len(docs)} 件 -> チャンク {len(chunks)} 件")
+    print("グループ別チャンク数: " + ", ".join(f"{group}={counts[group]}" for group in sorted(counts)))
 
     embeddings = HuggingFaceEndpointEmbeddings(model=os.getenv("TEI_EMBED_URL", "http://tei-embed:80"))
     QdrantVectorStore.from_documents(

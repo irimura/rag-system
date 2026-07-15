@@ -10,3 +10,4 @@ langchain-qdrant~=0.2.0
 langchain-text-splitters~=0.3.0
 pypdf~=5.9.0
 chardet~=5.2.0
+pyjwt~=2.10.0

@@ -1,9 +1,8 @@
 # 案2: Docker Compose 標準構成(Node B)
-# 構築手順: docs/deployment-guide.md
-# デバッグ用ポート(qdrant/tei/rag-api)は 127.0.0.1 バインドで外部非公開
+# デバッグ用ポートは 127.0.0.1 バインドで外部非公開
 services:
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.9.4
+    image: ghcr.io/open-webui/open-webui:v0.9.6
     ports:
       - "3000:8080"
     environment:
@@ -11,6 +10,18 @@ services:
       - OPENAI_API_KEY=dummy
       - ENABLE_OLLAMA_API=false
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - ENABLE_LOGIN_FORM=${ENABLE_LOGIN_FORM:-true}
+      - ENABLE_FORWARD_USER_INFO_HEADERS=true
+      - FORWARD_USER_INFO_HEADER_JWT_SECRET=${FORWARD_USER_INFO_HEADER_JWT_SECRET}
+      - ENABLE_OAUTH_SIGNUP=${ENABLE_OAUTH_SIGNUP:-}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}
+      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET:-}
+      - OPENID_PROVIDER_URL=${OPENID_PROVIDER_URL:-}
+      - OAUTH_PROVIDER_NAME=${OAUTH_PROVIDER_NAME:-}
+      - OAUTH_MERGE_ACCOUNTS_BY_EMAIL=${OAUTH_MERGE_ACCOUNTS_BY_EMAIL:-}
+      - ENABLE_OAUTH_GROUP_MANAGEMENT=${ENABLE_OAUTH_GROUP_MANAGEMENT:-}
+      - ENABLE_OAUTH_GROUP_CREATION=${ENABLE_OAUTH_GROUP_CREATION:-}
+      - OAUTH_GROUP_CLAIM=${OAUTH_GROUP_CLAIM:-}
     volumes:
       - open-webui-data:/app/backend/data
     depends_on:
@@ -22,6 +33,12 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     env_file: .env
+    environment:
+      - USER_JWT_SECRET=${FORWARD_USER_INFO_HEADER_JWT_SECRET}
+      - EVAL_TOKEN=${EVAL_TOKEN}
+      - GROUPS_CONFIG=/app/auth/groups.json
+    volumes:
+      - ./auth/groups.json:/app/auth/groups.json:ro
     depends_on:
       - qdrant
       - tei-embed
@@ -54,7 +71,6 @@ services:
       - hf-cache:/data
     restart: unless-stopped
 
-  # 取り込みバッチ: docker compose --profile ingest run --rm ingest
   ingest:
     build: ./rag-api
     profiles: ["ingest"]
@@ -65,6 +81,19 @@ services:
     depends_on:
       - qdrant
       - tei-embed
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    profiles: ["idp"]
+    command: ["start-dev", "--import-realm"]
+    environment:
+      - KC_HOSTNAME=http://keycloak:8080
+      - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN_USERNAME}
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ../keycloak/realm-rag.json:/opt/keycloak/data/import/realm-rag.json:ro
 
 volumes:
   open-webui-data:
