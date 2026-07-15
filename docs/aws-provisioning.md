@@ -11,13 +11,14 @@ AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化す�
 | ノード | 説明 | ホスト名 | 既定 Instance Type | ルート EBS |
 |---|---|---|---|---|
 | Node A | 最小構成(vLLM) | llm-001 | g6e.xlarge | 200GB |
-| Node B | 案1/案1b 最小構成 | app-001 | t3.large | 100GB |
+| Node B | 案1 最小構成 | app-001 | t3.large | 100GB |
+| Node B | 案1b 最小構成 | app-001b | t3.large | 100GB |
 | Node B | 案2 最小構成 | app-002 | m7i.xlarge | 100GB |
 | Node B | 案3 最小構成 | app-003 | r7i.xlarge | 200GB |
 
 ## 方針・設計
 
-- **単一サブネット**: 4 ノードすべてを 1 つのプライベートサブネット(192.168.0.0/26)に収容する
+- **単一サブネット**: 5 ノードすべてを 1 つのプライベートサブネット(192.168.0.0/26)に収容する
 - **NAT Gateway は必要時のみ**: 定常運用ではインターネット不要(モデル・イメージは AMI/EBS に取得済み、利用者は VPN 等の閉域から WebUI へ)。パッケージ取得やモデルダウンロードが必要なセットアップ時だけ NAT を作成し、AMI 化後に削除する
   - NAT Gateway は IGW へ抜ける**専用のパブリックサブネット**に置く必要があり、ワークロード用サブネットには同居できない。そのため NAT 用の一時サブネット(192.168.0.64/28)を NAT と同じライフサイクルで作成・削除する(ワークロードは常に単一サブネットのまま)
   - **IGW も NAT と同時に作成・削除する**: NAT Gateway 単体ではインターネットに到達できず、出口として IGW が必須(経路: Instance → NAT GW → IGW → Internet)。IGW 自体は無料だが、定常運用時にインターネット経路を一切残さない隔離のため、IGW も §2 で NAT と同ライフサイクルにする。**EICE は IGW を経由しない**ため、IGW/NAT が無い定常運用でもシェル接続は維持される
@@ -35,6 +36,7 @@ flowchart TB
             EICE["EC2 Instance Connect<br/>Endpoint(常設・無料)"]
             A["llm-001<br/>192.168.0.10"]
             B1["app-001<br/>192.168.0.21"]
+            B1b["app-001b<br/>192.168.0.24"]
             B2["app-002<br/>192.168.0.22"]
             B3["app-003<br/>192.168.0.23"]
             SG(["Security Group<br/>rag-system-ec2-sg"])
@@ -44,7 +46,7 @@ flowchart TB
         end
     end
     ADMIN -->|"SSH over EICE(22)"| EICE
-    EICE --> A & B1 & B2 & B3
+    EICE --> A & B1 & B1b & B2 & B3
     NAT --> IGW
     snet -.->|"0.0.0.0/0(NAT 稼働時のみ)"| NAT
 ```
@@ -83,12 +85,14 @@ nat_subnet_cidr=192.168.0.64/28 # NAT 用(一時・パブリック)
 # --- ノード別 Instance Type ---
 instance_type_llm=g6e.xlarge
 instance_type_app1=t3.large
+instance_type_app1b=t3.large
 instance_type_app2=m7i.xlarge
 instance_type_app3=r7i.xlarge
 
 # --- ノード別 ルート EBS(GB, gp3)---
 root_size_llm=200
 root_size_app1=100
+root_size_app1b=100
 root_size_app2=100
 root_size_app3=200
 root_device=/dev/sda1           # Ubuntu/DLAMI のルートデバイス
@@ -96,6 +100,7 @@ root_device=/dev/sda1           # Ubuntu/DLAMI のルートデバイス
 # --- ノード別 固定プライベート IP ---
 ip_llm=192.168.0.10
 ip_app1=192.168.0.21
+ip_app1b=192.168.0.24
 ip_app2=192.168.0.22
 ip_app3=192.168.0.23
 
@@ -197,12 +202,13 @@ EOF
 
 llm_id=$(launch_node  llm-001 ${instance_type_llm}  ${dlami}      ${root_size_llm}  ${ip_llm})
 app1_id=$(launch_node app-001 ${instance_type_app1} ${ubuntu_ami} ${root_size_app1} ${ip_app1})
+app1b_id=$(launch_node app-001b ${instance_type_app1b} ${ubuntu_ami} ${root_size_app1b} ${ip_app1b})
 app2_id=$(launch_node app-002 ${instance_type_app2} ${ubuntu_ami} ${root_size_app2} ${ip_app2})
 app3_id=$(launch_node app-003 ${instance_type_app3} ${ubuntu_ami} ${root_size_app3} ${ip_app3})
 
-aws ec2 wait instance-running --instance-ids ${llm_id} ${app1_id} ${app2_id} ${app3_id}
+aws ec2 wait instance-running --instance-ids ${llm_id} ${app1_id} ${app1b_id} ${app2_id} ${app3_id}
 rm -v user-data-*.sh
-echo "llm-001=${llm_id} app-001=${app1_id} app-002=${app2_id} app-003=${app3_id}"
+echo "llm-001=${llm_id} app-001=${app1_id} app-001b=${app1b_id} app-002=${app2_id} app-003=${app3_id}"
 ```
 
 この時点ではインターネット未接続(隔離)。シェル接続は §1.4 の EICE で行う(NAT 不要)。パッケージ取得・モデル DL には**インスタンス自身の外向き通信**が要るため、§2 で NAT を作成してからセットアップ([deployment-guide.md](deployment-guide.md))を行う。
@@ -258,6 +264,9 @@ Host ragsys-llm-001
 Host ragsys-app-001
     HostName ${app1_id}
     LocalForward 8000 localhost:8000
+
+Host ragsys-app-001b
+    HostName ${app1b_id}
     LocalForward 3000 localhost:3000
 
 Host ragsys-app-002
@@ -273,7 +282,7 @@ EOF
 ```bash
 # 各ノードへ接続(-N: シェルを開かずフォワードのみ保持)
 ssh -N ragsys-app-002    # 案2 の WebUI
-ssh -N ragsys-app-001    # 案1(8000)または案1b(3000)/ ssh -N ragsys-app-003(案3)/ ssh -N ragsys-llm-001(vLLM API)
+ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-001b(案1b)/ ssh -N ragsys-app-003(案3)/ ssh -N ragsys-llm-001(vLLM API)
 ```
 
 接続後、Host に対応する URL をブラウザで開く(llm-001 は WebUI ではなく vLLM API 用)。
@@ -281,7 +290,8 @@ ssh -N ragsys-app-001    # 案1(8000)または案1b(3000)/ ssh -N ragsys-app-003
 | Host | ノード | ローカル → リモート | アクセス |
 |---|---|---|---|
 | ragsys-llm-001 | llm-001 | 8080 → :8080 | `curl http://localhost:8080/v1/models`(vLLM API・デバッグ用) |
-| ragsys-app-001 | app-001(案1/案1b) | 8000 → :8000(案1)または 3000 → :3000(案1b) | http://localhost:8000 または http://localhost:3000 |
+| ragsys-app-001 | app-001(案1) | 8000 → :8000 | http://localhost:8000 |
+| ragsys-app-001b | app-001b(案1b) | 3000 → :3000 | http://localhost:3000 |
 | ragsys-app-002 | app-002(案2) | 3000 → :3000 | http://localhost:3000 |
 | ragsys-app-003 | app-003(案3) | 8443 → :443 | https://localhost:8443 |
 
@@ -334,7 +344,7 @@ cat > stop-schedule.json <<EOF
   "Target": {
     "Arn": "arn:aws:scheduler:::aws-sdk:ec2:stopInstances",
     "RoleArn": "${scheduler_role_arn}",
-    "Input": "{\"InstanceIds\":[\"${llm_id}\",\"${app1_id}\",\"${app2_id}\",\"${app3_id}\"]}"
+    "Input": "{\"InstanceIds\":[\"${llm_id}\",\"${app1_id}\",\"${app1b_id}\",\"${app2_id}\",\"${app3_id}\"]}"
   }
 }
 EOF
