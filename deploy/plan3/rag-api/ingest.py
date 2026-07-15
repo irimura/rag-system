@@ -1,20 +1,13 @@
-"""取り込みバッチ: documents/ 配下の文書を OpenSearch に登録する。
-
-BM25(kuromoji + bi-gram)とベクトル(knn_vector)を同じインデックスに持つ。
-インデックス定義: opensearch/index-mapping.json
-
-実行: docker compose --profile ingest run --rm ingest
-既存インデックスは毎回削除し、documents/ 全体から再構築する。
-"""
+"""取り込みバッチ: documents/<group>/ 配下の文書を OpenSearch に登録する。"""
 import json
 import os
+from collections import Counter
 
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from opensearchpy import OpenSearch, helpers
 
+from common import assign_group_metadata, load_documents, split_documents
 from opensearch_client import build_opensearch_client
-
-from common import load_documents, split_documents
 
 INDEX = os.getenv("OS_INDEX", "knowledge")
 EMBED_DIM = int(os.getenv("EMBED_DIM", "1024"))
@@ -33,11 +26,15 @@ def recreate_index(client: OpenSearch):
 
 
 def main():
-    docs = load_documents(os.getenv("DOCS_DIR", "/data/documents"))
+    docs_dir = os.getenv("DOCS_DIR", "/data/documents")
+    docs = load_documents(docs_dir)
     if not docs:
         raise SystemExit("documents/ に文書がありません。PDF/MD/TXT を配置してください。")
+    assign_group_metadata(docs, docs_dir)
     chunks = split_documents(docs)
+    counts = Counter(chunk.metadata["group"] for chunk in chunks)
     print(f"文書 {len(docs)} 件 -> チャンク {len(chunks)} 件")
+    print("グループ別チャンク数: " + ", ".join(f"{group}={counts[group]}" for group in sorted(counts)))
 
     client = build_opensearch_client()
     recreate_index(client)
@@ -50,10 +47,11 @@ def main():
             "_index": INDEX,
             "_source": {
                 "text": c.page_content,
-                "vector": v,
+                "vector": vector,
                 "source": os.path.basename(c.metadata.get("source", "不明")),
+                "group": c.metadata["group"],
             },
-        } for c, v in zip(batch, vectors)]
+        } for c, vector in zip(batch, vectors)]
         helpers.bulk(client, actions)
         print(f"  {min(i + BATCH, len(chunks))}/{len(chunks)} 件登録")
 

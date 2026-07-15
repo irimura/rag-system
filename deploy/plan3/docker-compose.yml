@@ -1,6 +1,5 @@
 # 案3: ハイブリッド検索・本格構成(Node B)
-# 構築手順: docs/deployment-guide.md
-# 事前に必須: sudo sysctl -w vm.max_map_count=262144(OpenSearch 要件)
+# 事前に必須: sudo sysctl -w vm.max_map_count=262144
 # 外部公開は nginx(80/443)のみ。他は 127.0.0.1 バインド
 services:
   nginx:
@@ -16,14 +15,25 @@ services:
     restart: unless-stopped
 
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.9.4
+    image: ghcr.io/open-webui/open-webui:v0.9.6
     environment:
       - OPENAI_API_BASE_URL=http://rag-api:8000/v1
       - OPENAI_API_KEY=dummy
       - ENABLE_OLLAMA_API=false
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
-      # 会話履歴・ユーザーを PostgreSQL に永続化
       - DATABASE_URL=postgresql://openwebui:${POSTGRES_PASSWORD}@postgres:5432/openwebui
+      - ENABLE_LOGIN_FORM=${ENABLE_LOGIN_FORM:-true}
+      - ENABLE_FORWARD_USER_INFO_HEADERS=true
+      - FORWARD_USER_INFO_HEADER_JWT_SECRET=${FORWARD_USER_INFO_HEADER_JWT_SECRET}
+      - ENABLE_OAUTH_SIGNUP=${ENABLE_OAUTH_SIGNUP:-}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}
+      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET:-}
+      - OPENID_PROVIDER_URL=${OPENID_PROVIDER_URL:-}
+      - OAUTH_PROVIDER_NAME=${OAUTH_PROVIDER_NAME:-}
+      - OAUTH_MERGE_ACCOUNTS_BY_EMAIL=${OAUTH_MERGE_ACCOUNTS_BY_EMAIL:-}
+      - ENABLE_OAUTH_GROUP_MANAGEMENT=${ENABLE_OAUTH_GROUP_MANAGEMENT:-}
+      - ENABLE_OAUTH_GROUP_CREATION=${ENABLE_OAUTH_GROUP_CREATION:-}
+      - OAUTH_GROUP_CLAIM=${OAUTH_GROUP_CLAIM:-}
     volumes:
       - open-webui-data:/app/backend/data
     depends_on:
@@ -45,6 +55,10 @@ services:
       - OS_INDEX=${OS_INDEX:-knowledge}
       - OS_USERNAME=rag_api
       - OS_PASSWORD=${OS_RAG_PASSWORD}
+      - OS_GROUP_USER_SECRET=${OS_GROUP_USER_SECRET}
+      - USER_JWT_SECRET=${FORWARD_USER_INFO_HEADER_JWT_SECRET}
+      - EVAL_TOKEN=${EVAL_TOKEN}
+      - GROUPS_CONFIG=/app/auth/groups.json
       - TEI_EMBED_URL=${TEI_EMBED_URL:-http://tei-embed:80}
       - TEI_RERANK_URL=${TEI_RERANK_URL:-http://tei-rerank:80}
       - RETRIEVE_K=${RETRIEVE_K:-20}
@@ -54,6 +68,7 @@ services:
       - MAX_RETRIES=${MAX_RETRIES:-2}
     volumes:
       - ./rag-api/certs/root-ca.pem:/app/certs/root-ca.pem:ro
+      - ./auth/groups.json:/app/auth/groups.json:ro
     depends_on:
       security-init:
         condition: service_completed_successfully
@@ -64,30 +79,24 @@ services:
     restart: unless-stopped
 
   opensearch:
-    build: ./opensearch          # analysis-kuromoji プラグイン入りイメージ
+    build: ./opensearch
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
       - OPENSEARCH_JAVA_OPTS=-Xms${OS_HEAP:-4g} -Xmx${OS_HEAP:-4g}
     ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-      nofile:
-        soft: 65536
-        hard: 65536
+      memlock: {soft: -1, hard: -1}
+      nofile: {soft: 65536, hard: 65536}
     ports:
       - "127.0.0.1:9200:9200"
     volumes:
       - opensearch-data:/usr/share/opensearch/data
     networks:
       default:
-        aliases:
-          - node-0.example.com
+        aliases: [node-0.example.com]
     restart: unless-stopped
 
-  # 初期管理者で最小権限の rag-api / ingest ユーザーを冪等作成する一回実行サービス
   security-init:
     build: ./rag-api
     command: ["python", "init_security.py"]
@@ -99,8 +108,11 @@ services:
       - OS_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
       - OS_RAG_PASSWORD=${OS_RAG_PASSWORD}
       - OS_INGEST_PASSWORD=${OS_INGEST_PASSWORD}
+      - OS_GROUP_USER_SECRET=${OS_GROUP_USER_SECRET}
+      - GROUPS_CONFIG=/app/auth/groups.json
     volumes:
       - ./rag-api/certs/root-ca.pem:/app/certs/root-ca.pem:ro
+      - ./auth/groups.json:/app/auth/groups.json:ro
     depends_on:
       - opensearch
     restart: "no"
@@ -111,17 +123,38 @@ services:
       - POSTGRES_USER=openwebui
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=openwebui
+      - KEYCLOAK_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD}
     volumes:
       - pg-data:/var/lib/postgresql/data
+      # initdb は空の pg-data を初期化する初回起動時だけ実行される
+      - ./postgres/initdb/01-keycloak.sh:/docker-entrypoint-initdb.d/01-keycloak.sh:ro
     restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0
+    profiles: ["idp"]
+    command: ["start-dev", "--import-realm"]
+    environment:
+      - KC_HOSTNAME=http://keycloak:8080
+      - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN_USERNAME}
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
+      - KC_DB_USERNAME=keycloak_app
+      - KC_DB_PASSWORD=${KEYCLOAK_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ../keycloak/realm-rag.json:/opt/keycloak/data/import/realm-rag.json:ro
+    depends_on:
+      - postgres
 
   tei-embed:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9.3
     command: ["--model-id", "${EMBED_MODEL}"]
     ports:
       - "127.0.0.1:8081:80"
-    volumes:
-      - hf-cache:/data
+    volumes: [hf-cache:/data]
     restart: unless-stopped
 
   tei-rerank:
@@ -129,11 +162,9 @@ services:
     command: ["--model-id", "${RERANK_MODEL}"]
     ports:
       - "127.0.0.1:8082:80"
-    volumes:
-      - hf-cache:/data
+    volumes: [hf-cache:/data]
     restart: unless-stopped
 
-  # 取り込みバッチ: docker compose --profile ingest run --rm ingest
   ingest:
     build: ./rag-api
     profiles: ["ingest"]

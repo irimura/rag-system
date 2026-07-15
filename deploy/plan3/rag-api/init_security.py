@@ -1,9 +1,11 @@
-"""OpenSearch の検証用サービスユーザーと最小権限ロールを冪等作成する。"""
+"""OpenSearch のサービスユーザー、グループ別 DLS role/user を冪等作成する。"""
+import json
 import os
 import time
 
 from opensearchpy.exceptions import OpenSearchException
 
+from auth import derive_group_password, load_group_config
 from opensearch_client import build_opensearch_client
 
 INDEX = os.getenv("OS_INDEX", "knowledge")
@@ -50,7 +52,28 @@ def main() -> None:
         "password": os.environ["OS_INGEST_PASSWORD"],
         "opendistro_security_roles": ["rag_ingest"],
     })
-    print("OpenSearch の rag-api / ingest ユーザーを設定しました")
+
+    for group in load_group_config()["groups"]:
+        role_name = f"rag_reader_{group}"
+        user_name = f"rag_{group}"
+        put(admin, f"/_plugins/_security/api/roles/{role_name}", {
+            "cluster_permissions": ["cluster_monitor"],
+            "index_permissions": [{
+                "index_patterns": [INDEX],
+                "allowed_actions": ["read", "indices:admin/get"],
+                "dls": json.dumps({"terms": {"group": [group]}}, separators=(",", ":")),
+            }],
+        })
+        put(admin, f"/_plugins/_security/api/internalusers/{user_name}", {
+            "password": derive_group_password(group),
+            "opendistro_security_roles": [role_name],
+        })
+
+    put(admin, "/_plugins/_security/api/internalusers/rag_eval", {
+        "password": derive_group_password("eval"),
+        "opendistro_security_roles": ["rag_reader"],
+    })
+    print("OpenSearch のサービスユーザーとグループ別 DLS role/user を設定しました")
 
 
 if __name__ == "__main__":

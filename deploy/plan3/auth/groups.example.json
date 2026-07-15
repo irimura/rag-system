@@ -1,0 +1,9 @@
+{
+  "groups": ["dept-a", "dept-b", "eval"],
+  "users": {
+    "alice@example.com": ["dept-a"],
+    "bob@example.com": ["dept-b"],
+    "carol@example.com": ["dept-a", "dept-b"],
+    "eva@example.com": ["eval"]
+  }
+}

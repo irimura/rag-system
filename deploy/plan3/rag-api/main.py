@@ -1,8 +1,4 @@
-"""案3 RAG API: LangGraph によるハイブリッド検索フローを OpenAI 互換 API として公開する。
-
-フロー: クエリ書き換え -> ハイブリッド検索(BM25 + kNN を RRF 統合)-> リランク
-        -> 関連度チェック(不十分なら別観点で再検索、上限まで)-> 生成 or 「該当なし」
-"""
+"""案3 RAG API: rag-api filter と OpenSearch DLS の二層でグループ認可する。"""
 import json
 import os
 import time
@@ -10,13 +6,14 @@ import uuid
 from typing import TypedDict
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel
 
+from auth import Principal, derive_group_password, require_principal
 from opensearch_client import build_opensearch_client
 from query_rewrite import build_rewrite_prompt
 
@@ -41,59 +38,66 @@ PROMPT = """以下のコンテキストのみに基づいて日本語で回答�
 
 # 質問
 {question}"""
-
-
 NO_ANSWER = "資料からは回答できません。関連する文書が見つかりませんでした。"
 
-llm = ChatOpenAI(
-    base_url=VLLM_BASE_URL,
-    api_key=os.getenv("VLLM_API_KEY", "dummy"),
-    model=VLLM_MODEL,
-    temperature=0,
-)
+llm = ChatOpenAI(base_url=VLLM_BASE_URL, api_key=os.getenv("VLLM_API_KEY", "dummy"),
+                 model=VLLM_MODEL, temperature=0)
 embeddings = HuggingFaceEndpointEmbeddings(model=TEI_EMBED_URL)
-os_client = build_opensearch_client()
+health_client = build_opensearch_client()
+_group_clients = {}
 
 
-# --- ハイブリッド検索 ---
+def client_for_group(group: str):
+    """DLS が設定されたグループ別 internal user のクライアントを返す。"""
+    if group not in _group_clients:
+        _group_clients[group] = build_opensearch_client(
+            username=f"rag_{group}",
+            password=derive_group_password(group),
+        )
+    return _group_clients[group]
 
-def bm25_search(query: str) -> list[dict]:
-    body = {"size": SEARCH_K, "query": {"multi_match": {
-        "query": query,
-        "fields": ["text", "text.bigram"],   # 形態素解析 + bi-gram(未知語対策)
-        "type": "most_fields"}}}
-    return os_client.search(index=INDEX, body=body)["hits"]["hits"]
+
+def bm25_search(query: str, groups: list[str], client) -> list[dict]:
+    body = {"size": SEARCH_K, "query": {"bool": {
+        "must": [{"multi_match": {
+            "query": query,
+            "fields": ["text", "text.bigram"],
+            "type": "most_fields",
+        }}],
+        "filter": [{"terms": {"group": groups}}],
+    }}}
+    return client.search(index=INDEX, body=body)["hits"]["hits"]
 
 
-def knn_search(vector: list[float]) -> list[dict]:
-    body = {"size": SEARCH_K, "query": {"knn": {"vector": {"vector": vector, "k": SEARCH_K}}}}
-    return os_client.search(index=INDEX, body=body)["hits"]["hits"]
+def knn_search(vector: list[float], groups: list[str], client) -> list[dict]:
+    body = {"size": SEARCH_K, "query": {"bool": {
+        "must": [{"knn": {"vector": {"vector": vector, "k": SEARCH_K}}}],
+        "filter": [{"terms": {"group": groups}}],
+    }}}
+    return client.search(index=INDEX, body=body)["hits"]["hits"]
 
 
 def rrf_fuse(result_lists: list[list[dict]]) -> list[dict]:
-    """Reciprocal Rank Fusion: score = Σ 1 / (RRF_K + rank)"""
     fused: dict[str, dict] = {}
     for results in result_lists:
         for rank, hit in enumerate(results):
             entry = fused.setdefault(hit["_id"], {"hit": hit, "score": 0.0})
             entry["score"] += 1.0 / (RRF_K + rank + 1)
-    ranked = sorted(fused.values(), key=lambda x: x["score"], reverse=True)
-    return [e["hit"] for e in ranked[:RETRIEVE_K]]
+    ranked = sorted(fused.values(), key=lambda item: item["score"], reverse=True)
+    return [entry["hit"] for entry in ranked[:RETRIEVE_K]]
 
 
 async def rerank(query: str, hits: list[dict]) -> list[dict]:
-    """TEI /rerank でスコアリングし、しきい値以上の上位 top_n 件に絞る。"""
     if not hits:
         return []
     async with httpx.AsyncClient(timeout=60) as client:
         res = await client.post(f"{TEI_RERANK_URL}/rerank", json={
-            "query": query, "texts": [h["_source"]["text"] for h in hits]})
+            "query": query, "texts": [hit["_source"]["text"] for hit in hits]})
         res.raise_for_status()
-    ranked = sorted(res.json(), key=lambda x: x["score"], reverse=True)
-    return [hits[r["index"]] for r in ranked[:RERANK_TOP_N] if r["score"] >= RERANK_THRESHOLD]
+    ranked = sorted(res.json(), key=lambda item: item["score"], reverse=True)
+    return [hits[item["index"]] for item in ranked[:RERANK_TOP_N]
+            if item["score"] >= RERANK_THRESHOLD]
 
-
-# --- LangGraph 検索フロー ---
 
 class RagState(TypedDict):
     question: str
@@ -102,11 +106,12 @@ class RagState(TypedDict):
     answer: str
     attempts: int
     previous_queries: list[str]
+    groups: list[str]
 
 
 async def node_rewrite(state: RagState) -> dict:
     if state["attempts"] == 0:
-        return {"query": state["question"]}          # 初回は元の質問で検索
+        return {"query": state["question"]}
     res = await llm.ainvoke(build_rewrite_prompt(
         question=state["question"],
         previous_queries=state["previous_queries"],
@@ -117,7 +122,12 @@ async def node_rewrite(state: RagState) -> dict:
 
 async def node_retrieve(state: RagState) -> dict:
     vector = await embeddings.aembed_query(state["query"])
-    fused = rrf_fuse([bm25_search(state["query"]), knn_search(vector)])
+    result_lists = []
+    for group in state["groups"]:
+        client = client_for_group(group)
+        result_lists.append(bm25_search(state["query"], state["groups"], client))
+        result_lists.append(knn_search(vector, state["groups"], client))
+    fused = rrf_fuse(result_lists)
     docs = await rerank(state["question"], fused)
     return {
         "docs": docs,
@@ -130,13 +140,13 @@ def route_grade(state: RagState) -> str:
     if state["docs"]:
         return "generate"
     if state["attempts"] <= MAX_RETRIES:
-        return "rewrite"                              # 別観点で再検索
+        return "rewrite"
     return "no_answer"
 
 
 async def node_generate(state: RagState) -> dict:
     context = "\n\n".join(
-        f"[{i + 1}] {h['_source']['text']}" for i, h in enumerate(state["docs"]))
+        f"[{index + 1}] {hit['_source']['text']}" for index, hit in enumerate(state["docs"]))
     res = await llm.ainvoke(PROMPT.format(context=context, question=state["question"]))
     return {"answer": res.content}
 
@@ -146,25 +156,22 @@ def node_no_answer(state: RagState) -> dict:
 
 
 def build_graph():
-    g = StateGraph(RagState)
-    g.add_node("rewrite", node_rewrite)
-    g.add_node("retrieve", node_retrieve)
-    g.add_node("generate", node_generate)
-    g.add_node("no_answer", node_no_answer)
-    g.set_entry_point("rewrite")
-    g.add_edge("rewrite", "retrieve")
-    g.add_conditional_edges("retrieve", route_grade,
-                            {"generate": "generate", "rewrite": "rewrite", "no_answer": "no_answer"})
-    g.add_edge("generate", END)
-    g.add_edge("no_answer", END)
-    return g.compile()
+    graph_builder = StateGraph(RagState)
+    graph_builder.add_node("rewrite", node_rewrite)
+    graph_builder.add_node("retrieve", node_retrieve)
+    graph_builder.add_node("generate", node_generate)
+    graph_builder.add_node("no_answer", node_no_answer)
+    graph_builder.set_entry_point("rewrite")
+    graph_builder.add_edge("rewrite", "retrieve")
+    graph_builder.add_conditional_edges(
+        "retrieve", route_grade,
+        {"generate": "generate", "rewrite": "rewrite", "no_answer": "no_answer"})
+    graph_builder.add_edge("generate", END)
+    graph_builder.add_edge("no_answer", END)
+    return graph_builder.compile()
 
 
 graph = build_graph()
-
-
-# --- OpenAI 互換 API ---
-
 app = FastAPI(title="rag-api")
 
 
@@ -180,7 +187,7 @@ class ChatRequest(BaseModel):
 
 
 def sources_footer(docs: list[dict]) -> str:
-    sources = sorted({h["_source"].get("source", "不明") for h in docs})
+    sources = sorted({hit["_source"].get("source", "不明") for hit in docs})
     return "\n\n---\n参考資料: " + " / ".join(sources) if sources else ""
 
 
@@ -190,40 +197,44 @@ async def health():
 
 
 @app.get("/v1/models")
-async def models():
+async def list_models():
     return {"object": "list",
-            "data": [{"id": RAG_MODEL_NAME, "object": "model", "created": 0, "owned_by": "rag-api"}]}
+            "data": [{"id": RAG_MODEL_NAME, "object": "model", "created": 0,
+                      "owned_by": "rag-api"}]}
 
 
 @app.post("/v1/chat/completions")
-async def chat_completions(req: ChatRequest):
-    question = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+async def chat_completions(
+    req: ChatRequest,
+    principal: Principal = Depends(require_principal),
+):
+    question = next((message.content for message in reversed(req.messages)
+                     if message.role == "user"), "")
     if not question:
         raise HTTPException(status_code=400, detail="user メッセージがありません")
-    if not os_client.indices.exists(INDEX):
+    if not health_client.indices.exists(INDEX):
         raise HTTPException(status_code=503,
                             detail=f"インデックス '{INDEX}' がありません。先に ingest を実行してください。")
 
     result = await graph.ainvoke(
         {"question": question, "query": "", "docs": [], "answer": "",
-         "attempts": 0, "previous_queries": []})
+         "attempts": 0, "previous_queries": [], "groups": principal.groups})
     content = result["answer"] + (sources_footer(result["docs"]) if result["docs"] else "")
-
-    resp_id = f"chatcmpl-{uuid.uuid4().hex}"
+    response_id = f"chatcmpl-{uuid.uuid4().hex}"
     created = int(time.time())
 
     if not req.stream:
-        return {"id": resp_id, "object": "chat.completion", "created": created,
+        return {"id": response_id, "object": "chat.completion", "created": created,
                 "model": RAG_MODEL_NAME,
                 "choices": [{"index": 0, "finish_reason": "stop",
                              "message": {"role": "assistant", "content": content}}],
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
 
-    # LangGraph はグラフ完了後に回答が確定するため、確定済み回答を SSE で返す
     async def pseudo_stream():
-        body = {"id": resp_id, "object": "chat.completion.chunk", "created": created,
+        body = {"id": response_id, "object": "chat.completion.chunk", "created": created,
                 "model": RAG_MODEL_NAME,
-                "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}]}
+                "choices": [{"index": 0, "delta": {"content": content},
+                             "finish_reason": None}]}
         yield f"data: {json.dumps(body, ensure_ascii=False)}\n\n"
         body["choices"] = [{"index": 0, "delta": {}, "finish_reason": "stop"}]
         yield f"data: {json.dumps(body, ensure_ascii=False)}\n\n"
