@@ -1,0 +1,77 @@
+{
+  "realm": "rag",
+  "enabled": true,
+  "displayName": "RAG verification realm",
+  "groups": [
+    {"name": "dept-a"},
+    {"name": "dept-b"},
+    {"name": "eval"}
+  ],
+  "clients": [
+    {
+      "clientId": "open-webui",
+      "name": "Open WebUI verification client",
+      "description": "検証用。client secret は露出前提であり、本番利用禁止。",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "open-webui-local-verification-secret",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "http://localhost:3000/oauth/oidc/callback",
+        "https://*/oauth/oidc/callback"
+      ],
+      "webOrigins": ["+"],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "groups": ["/dept-a"],
+      "credentials": [{"type": "password", "value": "change-me-alice", "temporary": true}]
+    },
+    {
+      "username": "bob",
+      "email": "bob@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "groups": ["/dept-b"],
+      "credentials": [{"type": "password", "value": "change-me-bob", "temporary": true}]
+    },
+    {
+      "username": "carol",
+      "email": "carol@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "groups": ["/dept-a", "/dept-b"],
+      "credentials": [{"type": "password", "value": "change-me-carol", "temporary": true}]
+    },
+    {
+      "username": "eva",
+      "email": "eva@example.com",
+      "emailVerified": true,
+      "enabled": true,
+      "groups": ["/eval"],
+      "credentials": [{"type": "password", "value": "change-me-eva", "temporary": true}]
+    }
+  ]
+}
