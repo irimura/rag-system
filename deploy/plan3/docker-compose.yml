@@ -1,5 +1,6 @@
 # 案3: ハイブリッド検索・本格構成(Node B)
-# 事前に必須: sudo sysctl -w vm.max_map_count=262144
+# 構築手順: docs/deployment-guide.md
+# 事前に必須: sudo sysctl -w vm.max_map_count=262144(OpenSearch 要件)
 # 外部公開は nginx(80/443)のみ。他は 127.0.0.1 バインド
 services:
   nginx:
@@ -79,24 +80,30 @@ services:
     restart: unless-stopped
 
   opensearch:
-    build: ./opensearch
+    build: ./opensearch          # analysis-kuromoji プラグイン入りイメージ
     environment:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
       - OPENSEARCH_JAVA_OPTS=-Xms${OS_HEAP:-4g} -Xmx${OS_HEAP:-4g}
     ulimits:
-      memlock: {soft: -1, hard: -1}
-      nofile: {soft: 65536, hard: 65536}
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
     ports:
       - "127.0.0.1:9200:9200"
     volumes:
       - opensearch-data:/usr/share/opensearch/data
     networks:
       default:
-        aliases: [node-0.example.com]
+        aliases:
+          - node-0.example.com
     restart: unless-stopped
 
+  # 初期管理者でサービスユーザーとグループ別 DLS role/user を冪等作成する一回実行サービス
   security-init:
     build: ./rag-api
     command: ["python", "init_security.py"]
@@ -154,7 +161,8 @@ services:
     command: ["--model-id", "${EMBED_MODEL}"]
     ports:
       - "127.0.0.1:8081:80"
-    volumes: [hf-cache:/data]
+    volumes:
+      - hf-cache:/data
     restart: unless-stopped
 
   tei-rerank:
@@ -162,9 +170,11 @@ services:
     command: ["--model-id", "${RERANK_MODEL}"]
     ports:
       - "127.0.0.1:8082:80"
-    volumes: [hf-cache:/data]
+    volumes:
+      - hf-cache:/data
     restart: unless-stopped
 
+  # 取り込みバッチ: docker compose --profile ingest run --rm ingest
   ingest:
     build: ./rag-api
     profiles: ["ingest"]

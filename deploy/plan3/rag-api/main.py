@@ -1,4 +1,7 @@
-"""案3 RAG API: rag-api filter と OpenSearch DLS の二層でグループ認可する。"""
+"""案3 RAG API: LangGraph のハイブリッド検索を OpenAI 互換 API として公開する。
+
+rag-api の明示 filter と OpenSearch DLS の二層でグループ認可する。
+"""
 import json
 import os
 import time
@@ -78,6 +81,7 @@ def knn_search(vector: list[float], groups: list[str], client) -> list[dict]:
 
 
 def rrf_fuse(result_lists: list[list[dict]]) -> list[dict]:
+    """Reciprocal Rank Fusion: score = Σ 1 / (RRF_K + rank)"""
     fused: dict[str, dict] = {}
     for results in result_lists:
         for rank, hit in enumerate(results):

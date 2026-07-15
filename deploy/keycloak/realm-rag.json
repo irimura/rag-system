@@ -19,8 +19,7 @@
       "publicClient": false,
       "standardFlowEnabled": true,
       "redirectUris": [
-        "http://localhost:3000/oauth/oidc/callback",
-        "https://*/oauth/oidc/callback"
+        "http://localhost:3000/oauth/oidc/callback"
       ],
       "webOrigins": ["+"],
       "protocolMappers": [

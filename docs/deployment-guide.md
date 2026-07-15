@@ -54,6 +54,8 @@ vim .env    # 最低限 VLLM_BASE_URL / VLLM_API_KEY(案1/2/3 は VLLM_MODEL も
 
 案1b/2/3 では `.env` のシークレットをすべて別々に `openssl rand -hex 32` で生成します。案2/3 は `FORWARD_USER_INFO_HEADER_JWT_SECRET` と `EVAL_TOKEN`、案3はさらに `OS_GROUP_USER_SECRET` と `KEYCLOAK_DB_PASSWORD` が必要です。
 
+案2/3 では次を実行します。案1bのグループは Open WebUI の Admin Panel で管理するため `groups.json` は使用しません。
+
 ```bash
 cp -v auth/groups.example.json auth/groups.json
 ```
@@ -247,6 +249,8 @@ ssh -N -L 8080:127.0.0.1:8180 ragsys-app-00${n}
 ```
 
 `.env` の OIDC ブロックを有効化し、`OPENID_PROVIDER_URL=http://keycloak:8080/realms/rag/.well-known/openid-configuration`、client ID `open-webui`、検証用固定 secret を設定して Open WebUI を再作成します。alice/bob/carol/eva でログインし、issuer と `groups` claim の同期を確認します。
+
+案3の HTTPS 公開名で検証する場合は、Keycloak 起動前に `deploy/keycloak/realm-rag.json` の `redirectUris` へ `https://${node_b_hostname}/oauth/oidc/callback` を明示追加します。Keycloak はホスト位置の wildcard をサポートしません。
 
 案3の PostgreSQL initdb script は空の `pg-data` を初期化する初回だけ keycloak_app role/DB を作成します。既存 volume には同等の SQL を別途適用します。本番は issuer/client/secret/redirect URI を組織 IdP と安定した HTTPS 名へ差し替え、検証用の secret、ユーザー、初期パスワードは移行しません。
 

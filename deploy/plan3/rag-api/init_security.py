@@ -54,6 +54,8 @@ def main() -> None:
     })
 
     for group in load_group_config()["groups"]:
+        if group == "eval":
+            continue
         role_name = f"rag_reader_{group}"
         user_name = f"rag_{group}"
         put(admin, f"/_plugins/_security/api/roles/{role_name}", {

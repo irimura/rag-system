@@ -1,4 +1,7 @@
-"""plan3 の auth.py と同一内容の複製(共有機構がないため)。変更時は両方を更新する。"""
+"""plan3 の auth.py と共通部分を複製する。変更時は両方を更新する。
+
+OpenSearch DLS 用の derive_group_password() は plan3 のみに置く。
+"""
 from __future__ import annotations
 
 import json

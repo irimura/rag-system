@@ -1,4 +1,7 @@
-"""案2 RAG API: 認証済み principal のグループ内だけを Qdrant から検索する。"""
+"""案2 RAG API: LangChain の RAG チェーンを OpenAI 互換 API として公開する。
+
+Open WebUI からは1モデルに見せ、認証済み principal のグループ内だけを検索する。
+"""
 import json
 import os
 import time

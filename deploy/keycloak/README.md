@@ -8,4 +8,6 @@
 - groups: `dept-a` / `dept-b` / `eval`
 - users: alice / bob / carol / eva(初回ログイン時にパスワード変更必須)
 
+案3で HTTPS 経由の OIDC を検証する場合は、起動前に realm の `redirectUris` へ実際の公開ホスト名を使った `https://${node_b_hostname}/oauth/oidc/callback` を明示追加します。Keycloak はホスト位置の wildcard を受け付けません。
+
 本番 IdP では Open WebUI の issuer、client ID/secret、redirect URI、`groups` claim mapper を差し替えます。固定 secret と検証ユーザーを移行しないでください。

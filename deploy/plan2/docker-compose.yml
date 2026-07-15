@@ -1,5 +1,6 @@
 # 案2: Docker Compose 標準構成(Node B)
-# デバッグ用ポートは 127.0.0.1 バインドで外部非公開
+# 構築手順: docs/deployment-guide.md
+# デバッグ用ポート(qdrant/tei/rag-api)は 127.0.0.1 バインドで外部非公開
 services:
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.9.6
@@ -71,6 +72,7 @@ services:
       - hf-cache:/data
     restart: unless-stopped
 
+  # 取り込みバッチ: docker compose --profile ingest run --rm ingest
   ingest:
     build: ./rag-api
     profiles: ["ingest"]

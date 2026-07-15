@@ -122,9 +122,11 @@ OIDC issuer はブラウザ、Open WebUI、OpenSearch から同じ URL に見え
 
 ## 9.1 サンプル実装の採用方式
 
-デプロイサンプルでは、Open WebUI v0.9.6 以降の署名付き `X-OpenWebUI-User-Jwt` を必須とし、平文転送ヘッダーを信頼しません。ローカル期の所属は各案の `auth/groups.json` から解決します。
+デプロイサンプルでは、Open WebUI v0.9.6 以降の署名付き `X-OpenWebUI-User-Jwt` を必須とし、平文転送ヘッダーを信頼しません。ローカル期の所属は案2/3 の `auth/groups.json` から解決します。案1bは Open WebUI 内のグループ管理を使用します。
 
 案2/3の文書配置は `documents/<group>/...` とし、第1階層をチャンクの `group` に保存します。直下ファイルは fail closed で取り込みを中止します。案3は暫定方式としてグループ別 OpenSearch internal user + DLS を採用し、rag-api の明示 filter と二層で制限します。Token Exchange による利用者 token 中継は本番 IdP 統合時の将来パスです。
+
+案3の eval principal は全グループをグループ別クライアントで検索するため、同じ文書が複数経路で取得されると RRF スコアが加算され、本番の単一/少数グループ利用者と評価順位がわずかに異なる場合があります。これは暫定 internal user 方式の既知特性です。
 
 ## 10. 公式資料
 
