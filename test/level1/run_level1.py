@@ -23,14 +23,19 @@ def load_cases(path: str) -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
-def retrieve(question: str) -> dict:
+def retrieve(question: str, groups: list[str] | None = None) -> dict:
     """rag-api 本番応答と共有された検索経路の候補・rerank 結果を取得する。"""
     import httpx
 
+    token = os.getenv("RAG_EVAL_TOKEN", "")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    payload = {"question": question}
+    if groups:
+        payload["groups"] = groups
     with httpx.Client(timeout=60) as client:
         res = client.post(
             f"{RAG_API_URL}/internal/evaluation/retrieve",
-            json={"question": question})
+            json=payload, headers=headers)
         res.raise_for_status()
         return res.json()
 
@@ -86,8 +91,8 @@ def score_case(
     }
 
 
-def evaluate_case(case: dict) -> dict:
-    result = retrieve(case["question"])
+def evaluate_case(case: dict, groups: list[str] | None = None) -> dict:
+    result = retrieve(case["question"], groups)
     settings = result["settings"]
     return score_case(
         case, result["candidates"], result["reranked"],
@@ -108,6 +113,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", help="単一ケース ID のみ評価(例: TC01-001)")
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--groups", nargs="+", help="評価対象グループ(例: --groups dept-a dept-b)")
     args = parser.parse_args()
 
     cases = [c for c in load_cases(GOLDEN_PATH) if c.get("answerable", True)]
@@ -118,7 +124,7 @@ def main() -> None:
 
     results, by_cat = [], defaultdict(list)
     for case in cases:
-        r = evaluate_case(case)
+        r = evaluate_case(case, args.groups)
         results.append(r)
         by_cat[case["category"]].append(r)
         if args.verbose:

@@ -29,8 +29,10 @@ def generate_answer(question: str) -> str:
     """rag-api の本番 OpenAI 互換 API を呼び、検索・閾値・回答不能分岐・生成を共有する。"""
     import httpx
 
+    token = os.getenv("RAG_EVAL_TOKEN", "")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     with httpx.Client(timeout=180) as client:
-        res = client.post(f"{RAG_API_URL}/v1/chat/completions", json={
+        res = client.post(f"{RAG_API_URL}/v1/chat/completions", headers=headers, json={
             "model": "knowledge-rag",
             "messages": [{"role": "user", "content": question}],
             "stream": False,

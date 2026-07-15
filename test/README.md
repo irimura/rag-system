@@ -14,6 +14,7 @@
 | [cases/TC01_single_fact.md](cases/TC01_single_fact.md) | ケース手順書サンプル: 単純事実 |
 | [cases/TC07_unanswerable.md](cases/TC07_unanswerable.md) | ケース手順書サンプル: 該当なし(捏造検出) |
 | [cases/TC09_conversational.md](cases/TC09_conversational.md) | ケース手順書サンプル: 会話文脈依存 |
+| [cases/TC11_group_authorization.md](cases/TC11_group_authorization.md) | 認証欠落・グループ越境アクセス拒否 |
 
 ## テスト実行の全体フロー
 
