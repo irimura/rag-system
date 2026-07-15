@@ -1,10 +1,11 @@
-# Node B 構築手順書(案1〜案3)
+# Node B 構築手順書(全案)
 
 [deploy/](../deploy/) 配下の Dockerfile / docker-compose.yml / パラメータファイルを使って、アプリ+データノード(Node B)を構築する手順です。
 
 | 案 | 構築ファイル | 公開ポート | 主なパラメータファイル |
 |---|---|---|---|
 | 案1 | [deploy/plan1/](../deploy/plan1/) | 8000(Chainlit) | `.env` |
+| 案1b | [deploy/plan1b/](../deploy/plan1b/) | 3000(Open WebUI) | `.env` |
 | 案2 | [deploy/plan2/](../deploy/plan2/) | 3000(Open WebUI) | `.env` |
 | 案3 | [deploy/plan3/](../deploy/plan3/) | 80/443(Nginx) | `.env`、`nginx/conf.d/rag.conf`、`opensearch/index-mapping.json` |
 
@@ -16,7 +17,7 @@
 
 ## 0. 前提条件
 
-- Node B: Ubuntu Server 24.04 LTS(RAM 目安 — 案1: 8GB〜 / 案2: 16GB〜 / 案3: 32GB〜)。AWS EC2 で構築する場合の Instance Type / AMI 選定は [node-specs.md](node-specs.md) を参照
+- Node B: Ubuntu Server 24.04 LTS(RAM 目安 — 案1/案1b: 8GB〜 / 案2: 16GB〜 / 案3: 32GB〜)。AWS EC2 で構築する場合の Instance Type / AMI 選定は [node-specs.md](node-specs.md) を参照
 - Node A で vLLM が **OpenAI 互換エンドポイントとしてサービス化済み**で、Node B から HTTP 到達できること(未了の場合は先に [deploy/node-a/](../deploy/node-a/) の compose または systemd unit で `vllm serve` を起動する。スペック・AMI は [node-specs.md](node-specs.md) §1)
 - インターネット接続(イメージ・モデルの初回ダウンロードに必要)
 
@@ -42,8 +43,8 @@ curl http://${node_a}:8080/v1/models -H "Authorization: Bearer ${vllm_api_key}"
 ```bash
 git clone ${repo_url} && cd rag-system/deploy/plan${n}
 cp -v .env.example .env
-vim .env    # 最低限 VLLM_BASE_URL / VLLM_MODEL を実環境に合わせる
-            # 案2/3 は WEBUI_SECRET_KEY を変更。案3は加えて
+vim .env    # 最低限 VLLM_BASE_URL / VLLM_API_KEY(案1/2/3 は VLLM_MODEL も)を実環境に合わせる
+            # 案1b/2/3 は WEBUI_SECRET_KEY を変更。案3は加えて
             # OPENSEARCH_INITIAL_ADMIN_PASSWORD / OS_RAG_PASSWORD /
             # OS_INGEST_PASSWORD / POSTGRES_PASSWORD も別々の値へ変更:
             #   openssl rand -hex 32
@@ -76,6 +77,24 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000   # -> 200
 
 - 文書を追加・更新・削除したら `documents/` に全コーパスが揃っていることを確認して手順 2) を再実行する。既存コレクションは削除され、全量再構築される。案1は再取り込み後に `docker compose restart chainlit-app` を実行する
 - 初回質問は rerank モデルのロードで数十秒かかることがある(2 回目以降は高速)
+
+## 1b. 案1b の構築(Open WebUI 単体)
+
+```bash
+cd deploy/plan1b
+
+# 1) 起動
+# 初回は Open WebUI と embedding/rerank モデルをダウンロードする
+docker compose up -d
+
+# 2) 確認
+docker compose logs -f open-webui
+docker compose ps
+```
+
+ブラウザで `http://${node_b}:3000` を開き、最初のアカウントを管理者として登録します。管理者設定の OpenAI API 接続で Node A の vLLM モデルが表示され、直接選択できることを確認します。
+
+`Workspace > Knowledge` で文書をアップロードし、チャットでその Knowledge を参照して質問します。回答と出典が表示されれば、内蔵 RAG の取り込み・検索・生成経路を確認できています。
 
 ## 2. 案2 の構築(Open WebUI + Qdrant + TEI)
 
@@ -181,11 +200,11 @@ curl http://localhost:8000/v1/chat/completions \
 
 | 作業 | コマンド |
 |---|---|
-| 文書の追加・更新・削除 | `documents/` に全コーパスを配置 → `docker compose --profile ingest run --rm ingest`。3案とも既存コレクション/インデックスを削除して全量再構築するため、差分ファイルだけでは実行しない。案1は完了後に `docker compose restart chainlit-app` |
+| 文書の追加・更新・削除 | 案1/2/3: `documents/` に全コーパスを配置 → `docker compose --profile ingest run --rm ingest`。既存コレクション/インデックスを削除して全量再構築するため、差分ファイルだけでは実行しない。案1は完了後に `docker compose restart chainlit-app`。案1b: `Workspace > Knowledge` 画面で文書を追加・削除 |
 | ログ確認 | `docker compose logs -f <service>` |
 | 停止 / 再開 | `docker compose down` / `docker compose up -d`(volume は保持される) |
 | アプリ更新 | ソース修正 → `docker compose up -d --build` |
-| バックアップ | volume を停止中にアーカイブ: `docker run --rm -v plan2_qdrant-data:/from -v $(pwd):/to alpine tar czf /to/qdrant-backup.tgz -C /from .`(対象: 案1 `chroma-data` / 案2 `qdrant-data`, `open-webui-data` / 案3 `opensearch-data`, `pg-data`, `open-webui-data`) |
+| バックアップ | volume を停止中にアーカイブ: `docker run --rm -v plan2_qdrant-data:/from -v $(pwd):/to alpine tar czf /to/qdrant-backup.tgz -C /from .`(対象: 案1 `chroma-data` / 案1b `open-webui-data` / 案2 `qdrant-data`, `open-webui-data` / 案3 `opensearch-data`, `pg-data`, `open-webui-data`) |
 
 ## 5. トラブルシューティング
 
@@ -195,14 +214,14 @@ curl http://localhost:8000/v1/chat/completions \
 | TEI が起動直後に応答しない | 初回のモデルダウンロード中。`docker compose logs tei-embed` で進捗確認(volume `hf-cache` にキャッシュされ 2 回目以降は速い) |
 | OpenSearch が起動ループ | `vm.max_map_count` 未設定(§3-1)、またはヒープ過大。`docker compose logs opensearch` を確認 |
 | 回答が「資料からは回答できません」ばかり | ①ingest 済みか ②`RERANK_THRESHOLD` が高すぎないか(0 にして切り分け)③質問が文書内容と合っているか、を順に確認 |
-| vLLM への接続エラー | `.env` の `VLLM_BASE_URL` と §0-2 の疎通を確認(コンテナ内からは `localhost` は使えない — Node A の実ホスト名/IP を指定する) |
+| vLLM への接続エラー | 案1b は Open WebUI から vLLM へ直結し、案1/2/3 は各アプリから接続する。`.env` の `VLLM_BASE_URL` と §0-2 の疎通を確認(コンテナ内からは `localhost` は使えない — Node A の実ホスト名/IP を指定する) |
 | Embedding モデルを変えたら検索が壊れた | ベクトル空間の互換性はない。`documents/` の全コーパスを確認して通常の取り込みコマンドで全量再構築する(案3 は `.env` の `EMBED_DIM` も合わせる) |
-| e5 系モデルで精度が悪い | 案1 は `common.py` が prefix を自動付与。案2/3 の TEI 構成で e5 系を使う場合は query:/passage: の付与処理を追加する必要がある(既定の bge-m3 は不要) |
+| e5 系モデルで精度が悪い | 案1 は `common.py` が prefix を自動付与。案1b は自動付与がないため bge-m3 を推奨。案2/3 の TEI 構成で e5 系を使う場合は query:/passage: の付与処理を追加する必要がある(既定の bge-m3 は不要) |
 
 ## 6. 動作確認チェックリスト(受け入れ)
 
-1. WebUI にアクセスでき、モデル(`knowledge-rag` / 案1 は Chainlit 画面)が使える
+1. WebUI にアクセスでき、モデル(`knowledge-rag` / 案1 は Chainlit 画面 / 案1b は vLLM のモデルを直接選択)が使える
 2. 投入した文書の内容を質問すると、本文に基づいた回答 + 参考資料(ファイル名)が返る
 3. 文書に存在しない事柄を質問すると「資料からは回答できません」と返る(捏造しない)
-4. `docker compose restart` 後もインデックスと(案2/3)会話履歴が保持されている
+4. `docker compose restart` 後もインデックスと(案1b/2/3)会話履歴が保持されている
 5. 以降の精度評価は [evaluation-spec.md](evaluation-spec.md) の手順で実施する

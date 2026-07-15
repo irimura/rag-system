@@ -64,7 +64,7 @@ GPU インスタンスの選定は、次の順で絞り込みます。
 
 ### 2.1 選定基準
 
-1. **RAM が決定打**(採用する案の常駐サービス数で決まる): 案1 8GB〜 / 案2 16GB〜 / 案3 32GB〜
+1. **RAM が決定打**(採用する案の常駐サービス数で決まる): 案1/案1b 8GB〜 / 案2 16GB〜 / 案3 32GB〜
 2. **vCPU は TEI(embedding/rerank の CPU 推論)が主な消費者**。対話のレイテンシと取り込みバッチの速度に効くため 4 vCPU 以上を推奨
 3. GPU は不要(GPU AMI も不要)。取り込みが遅い場合の GPU 追加は後から検討([plan2 参照](plan2-standard.md))
 4. バーストが許容できる検証用途なら t3/t4g 系、常用なら非バーストの m/r 系
@@ -73,7 +73,7 @@ GPU インスタンスの選定は、次の順で絞り込みます。
 
 | 案 | 最小(検証) | 推奨(常用) | 備考 |
 |---|---|---|---|
-| 案1 | t3.large(2vCPU/8GB) | m7i.xlarge(4vCPU/16GB) | embedding/rerank がプロセス内 CPU 実行のため vCPU 多めが快適 |
+| 案1/案1b | t3.large(2vCPU/8GB) | m7i.xlarge(4vCPU/16GB) | embedding/rerank が Node B の CPU で動くため vCPU 多めが快適 |
 | 案2 | m7i.xlarge(4vCPU/16GB) | m7i.2xlarge(8vCPU/32GB) | TEI ×2 + Qdrant + WebUI |
 | 案3 | r7i.xlarge(4vCPU/32GB) | **r7i.2xlarge(8vCPU/64GB)** | OpenSearch の JVM ヒープ(`OS_HEAP`)+ヒープ外メモリでメモリ優先型(r 系)が適する |
 
@@ -112,8 +112,8 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 |---|---|---:|---:|---:|
 | **g6e.xlarge** | Node A(最小) | 2.699 | 約 315,200 | 約 69,100 |
 | **g6e.2xlarge** | Node A(推奨) | 3.252 | 約 379,800 | 約 83,200 |
-| t3.large | Node B 案1(最小) | 0.1088 | 約 12,700 | 約 2,800 |
-| m7i.xlarge | Node B 案1 推奨 / 案2 最小 | 0.2604 | 約 30,400 | 約 6,700 |
+| t3.large | Node B 案1/案1b(最小) | 0.1088 | 約 12,700 | 約 2,800 |
+| m7i.xlarge | Node B 案1/案1b 推奨 / 案2 最小 | 0.2604 | 約 30,400 | 約 6,700 |
 | m7i.2xlarge | Node B 案2(推奨) | 0.5208 | 約 60,800 | 約 13,300 |
 | r7i.xlarge | Node B 案3(最小) | 0.3192 | 約 37,300 | 約 8,200 |
 | r7i.2xlarge | Node B 案3(推奨) | 0.6384 | 約 74,600 | 約 16,300 |
@@ -137,7 +137,7 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 | NAT Gateway(一時) | 稼働時間 + 処理データ量 | 約 10 円/h + 約 10 円/GB(定常運用では削除) |
 | Elastic IP(NAT 用・一時) | 割当中のみ | 約 0.8 円/h(NAT 稼働中のみ) |
 
-- **EBS が唯一の常時課金項目**(インスタンスを停止しても消えない)。推奨構成の EBS 合算: 案1/案2 = Node A 200GB + Node B 100GB ≒ **約 4,600 円/月**、案3 = 200GB + 200GB ≒ **約 6,200 円/月**。
+- **EBS が唯一の常時課金項目**(インスタンスを停止しても消えない)。推奨構成の EBS 合算: 案1/案1b/案2 = Node A 200GB + Node B 100GB ≒ **約 4,600 円/月**、案3 = 200GB + 200GB ≒ **約 6,200 円/月**。
 - **NAT Gateway + EIP は一時利用**。例: セットアップ 1 回(約 10h 稼働・モデル/イメージ 100GB ダウンロード)≒ **約 1,100 円/回**。使い終えたら削除して停止する([aws-provisioning.md](aws-provisioning.md) §2.2)。
 - VPC・IGW・EICE 等は無料。データ転送(外向き egress)は別途だが、定常運用は閉域(IGW/NAT なし)のため EC2 起点の egress はほぼ発生しない。
 

@@ -128,7 +128,7 @@ vectorstore = QdrantVectorStore.from_documents(
 
 | 製品 | 形態 | 向くケース |
 |---|---|---|
-| Chroma | 組み込み/サーバ | PoC・小規模。pip だけで動く(案1) |
+| Chroma | 組み込み/サーバ | PoC・小規模。pip だけで動く(案1/1b) |
 | Qdrant | サーバ(Rust) | 中規模の本命。軽量・高速・フィルタ・量子化(案2) |
 | pgvector | PostgreSQL 拡張 | 既に PostgreSQL がある場合。RDB と一元管理 |
 | Milvus | サーバ/分散 | 大規模。GPU インデックス・BM25 内蔵(2.5+) |

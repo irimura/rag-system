@@ -75,4 +75,5 @@ python run_level1.py --case TC01-001 --verbose
 | 構成 | 読み替え |
 |---|---|
 | 案1(Chroma 組み込み) | 検索がプロセス内のため HTTP では叩けない。`run_level1.py` の検索部を `langchain_chroma` 直接呼び出しに差し替え、`deploy/plan1/app` の venv 上で実行する |
+| 案1b(Open WebUI 内蔵 RAG) | rag-api の HTTP エンドポイントを持たないため本評価の対象外([test/README.md](../README.md) の共通の前提を参照)。GUI での確認に読み替える |
 | 案3(OpenSearch) | 検索先を `http://localhost:9200/knowledge/_search` に変更し、BM25 + kNN + RRF(`deploy/plan3/rag-api/main.py` と同じロジック)を評価対象にする |

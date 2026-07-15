@@ -1,0 +1,23 @@
+# 案1b: Open WebUI 内蔵 RAG 最小構成(Node B)
+# 構築手順: docs/deployment-guide.md
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.9.4
+    ports:
+      - "3000:8080"
+    environment:
+      - OPENAI_API_BASE_URL=${VLLM_BASE_URL}
+      - OPENAI_API_KEY=${VLLM_API_KEY}
+      - ENABLE_OLLAMA_API=false
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+      - VECTOR_DB=chroma
+      - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL}
+      - ENABLE_RAG_HYBRID_SEARCH=${ENABLE_RAG_HYBRID_SEARCH}
+      - RAG_RERANKING_MODEL=${RAG_RERANKING_MODEL}
+      - RAG_TOP_K=${RAG_TOP_K}
+    volumes:
+      - open-webui-data:/app/backend/data
+    restart: unless-stopped
+
+volumes:
+  open-webui-data:

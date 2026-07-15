@@ -8,7 +8,7 @@
 - 方針:
   - **無償利用可・ソース公開**のソフトウェアで構成する(ライセンス一覧は末尾参照)
   - **クラウド固有のマネージドサービスは使用しない**(全コンポーネントをセルフホスト)
-  - オーケストレーションは **LangChain** を使用
+  - オーケストレーションは **LangChain** を使用(案1b のみ Open WebUI 内蔵 RAG で LangChain 不使用)
   - 全案共通で **GPU ノード(Node A)とアプリ+データノード(Node B)の 2 ノード構成** を基本とする(§2 参照)
 
 ## ドキュメント構成
@@ -17,6 +17,7 @@
 |---|---|
 | [README.md](README.md) | 本資料(全体設計・実装案・精度向上の解説) |
 | [docs/plan1-minimal.md](docs/plan1-minimal.md) | 案1: シングルプロセス最小構成 |
+| [docs/plan1b-openwebui.md](docs/plan1b-openwebui.md) | 案1b: Open WebUI 内蔵 RAG 最小構成(コード不要) |
 | [docs/plan2-standard.md](docs/plan2-standard.md) | 案2: Docker Compose 標準構成 |
 | [docs/plan3-hybrid.md](docs/plan3-hybrid.md) | 案3: ハイブリッド検索・本格構成 |
 | [docs/rag-components.md](docs/rag-components.md) | RAG 精度向上のための構成要素解説(Loader / Transformer / Embedding / Vector store / Retriever / Rerank) |
@@ -27,7 +28,7 @@
 | [docs/node-specs.md](docs/node-specs.md) | ノードスペック選定(AWS EC2 の Instance Type / AMI / EBS / セキュリティグループ / 月額試算) |
 | [docs/aws-provisioning.md](docs/aws-provisioning.md) | AWS 構築手順(Bash/CLI で VPC・サブネット・SG・NAT Gateway・EICE・EC2 を作成/削除/AMI 化/AMI から再作成) |
 | [docs/node-a-pre-install.md](docs/node-a-pre-install.md) | Node A 単体の構築・動作確認手順(DLAMI 確認 → deploy/node-a/ での vLLM 起動まで) |
-| [docs/deployment-guide.md](docs/deployment-guide.md) | Node B 構築手順書(案1〜案3 の構築・確認・運用・トラブルシューティング) |
+| [docs/deployment-guide.md](docs/deployment-guide.md) | Node B 構築手順書(全案の構築・確認・運用・トラブルシューティング) |
 | [deploy/](deploy/) | 構築ファイル一式(Node A の vLLM サービス化 / 案毎の Dockerfile / docker-compose.yml / .env.example / nginx conf / OpenSearch マッピング / アプリコード) |
 
 ---
@@ -129,27 +130,28 @@ flowchart LR
 
 ## 3. 実装案の比較
 
-3 案を用意しました。**案2 を推奨**とし、要件の変化に応じて案1(縮小)・案3(拡張)へスライドできる設計です。
+4 案を用意しました。**案2 を推奨**とし、要件の変化に応じて案1・案1b(縮小)・案3(拡張)へスライドできる設計です。
 
-| | 案1: 最小構成 | 案2: 標準構成(推奨) | 案3: 本格構成 |
-|---|---|---|---|
-| 詳細 | [plan1-minimal.md](docs/plan1-minimal.md) | [plan2-standard.md](docs/plan2-standard.md) | [plan3-hybrid.md](docs/plan3-hybrid.md) |
-| ノード構成 | Node A + Node B | Node A + Node B | Node A + Node B(将来 DB を Node C に分離可) |
-| WebUI | Chainlit(API 同居) | Open WebUI | Open WebUI + Nginx(TLS) |
-| RAG API | Chainlit プロセス内 | FastAPI + LangChain | FastAPI + LangGraph |
-| 検索 DB | Chroma(組み込み) | Qdrant | OpenSearch(Hybrid)or Milvus |
-| Embedding | プロセス内(sentence-transformers) | TEI(専用コンテナ) | TEI(専用コンテナ) |
-| Rerank | プロセス内 CrossEncoder | TEI rerank | TEI rerank |
-| 検索方式 | ベクトルのみ | ベクトル + MMR | **ハイブリッド(BM25 + ベクトル)+ RRF** |
-| 会話履歴 | なし(メモリ) | Open WebUI 内蔵(SQLite) | PostgreSQL |
-| デプロイ(Node B) | Docker Compose(venv + systemd は代替) | Docker Compose | Docker Compose |
-| 想定規模 | 個人・PoC(〜数千文書) | 部門(〜数十万チャンク) | 全社(数百万チャンク〜) |
-| vLLM 以外の GPU | 不要(CPU で完結) | 不要(TEI は CPU 版。取り込み高速化に任意で追加) | 任意(取り込み・rerank 高速化に Node B へ小型 GPU 追加を検討) |
-| Node B の RAM 目安 | 8GB〜 | 16GB〜 | 32GB〜(OpenSearch ヒープ含む) |
+| | 案1: 最小構成 | 案1b: コード不要最小構成 | 案2: 標準構成(推奨) | 案3: 本格構成 |
+|---|---|---|---|---|
+| 詳細 | [plan1-minimal.md](docs/plan1-minimal.md) | [plan1b-openwebui.md](docs/plan1b-openwebui.md) | [plan2-standard.md](docs/plan2-standard.md) | [plan3-hybrid.md](docs/plan3-hybrid.md) |
+| ノード構成 | Node A + Node B | Node A + Node B | Node A + Node B | Node A + Node B(将来 DB を Node C に分離可) |
+| WebUI | Chainlit(API 同居) | Open WebUI | Open WebUI | Open WebUI + Nginx(TLS) |
+| RAG API | Chainlit プロセス内 | Open WebUI 内蔵 RAG(コード不要) | FastAPI + LangChain | FastAPI + LangGraph |
+| 検索 DB | Chroma(組み込み) | 内蔵 Chroma | Qdrant | OpenSearch(Hybrid)or Milvus |
+| Embedding | プロセス内(sentence-transformers) | Open WebUI 内蔵(CPU) | TEI(専用コンテナ) | TEI(専用コンテナ) |
+| Rerank | プロセス内 CrossEncoder | Open WebUI 内蔵(CPU) | TEI rerank | TEI rerank |
+| 検索方式 | ベクトルのみ | ベクトル(内蔵ハイブリッド可) | ベクトル + MMR | **ハイブリッド(BM25 + ベクトル)+ RRF** |
+| 会話履歴 | なし(メモリ) | 内蔵 SQLite | Open WebUI 内蔵(SQLite) | PostgreSQL |
+| デプロイ(Node B) | Docker Compose(venv + systemd は代替) | Docker Compose | Docker Compose | Docker Compose |
+| 想定規模 | 個人・PoC(〜数千文書) | 個人・PoC | 部門(〜数十万チャンク) | 全社(数百万チャンク〜) |
+| vLLM 以外の GPU | 不要(CPU で完結) | 不要(CPU で完結) | 不要(TEI は CPU 版。取り込み高速化に任意で追加) | 任意(取り込み・rerank 高速化に Node B へ小型 GPU 追加を検討) |
+| Node B の RAM 目安 | 8GB〜 | 8GB〜 | 16GB〜 | 32GB〜(OpenSearch ヒープ含む) |
 
 **選定の目安:**
 
-- まず動くものを最速で → **案1**
+- まず動くものを最速で(RAG の内部実装も学びたい)→ **案1**
+- コードを一切書かずに最速で試す → **案1b**(カスタマイズ余地は最小)
 - 複数ユーザーで常用・運用も見据える → **案2**
 - 日本語の型番・固有名詞検索が多い、文書量が多い → **案3**(BM25 併用が効く)
 
@@ -178,8 +180,8 @@ flowchart LR
 | LangChain / LangGraph | オーケストレーション | MIT |
 | FastAPI / Uvicorn | API サーバ | MIT / BSD-3 |
 | Chainlit | WebUI(案1) | Apache-2.0 |
-| Open WebUI | WebUI(案2/3) | BSD-3 ベース(ブランディング条項付き。無償利用可) |
-| Chroma | Vector store(案1) | Apache-2.0 |
+| Open WebUI | WebUI(案1b/2/3) | BSD-3 ベース(ブランディング条項付き。無償利用可) |
+| Chroma | Vector store(案1/1b) | Apache-2.0 |
 | Qdrant | Vector store(案2) | Apache-2.0 |
 | Milvus | Vector store(案3 代替) | Apache-2.0 |
 | OpenSearch | ハイブリッド検索(案3) | Apache-2.0 |

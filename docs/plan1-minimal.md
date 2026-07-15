@@ -3,6 +3,7 @@
 WebUI・RAG ロジック・ベクトル DB を **1 つの Python プロセス(Chainlit)に同居**させる最小構成。
 vLLM が稼働する GPU ノード(Node A)とは分離し、**アプリノード(Node B)上の 1 プロセス**で完結させます。
 Node B 側の標準デプロイは Docker Compose で、必要に応じて venv + systemd だけの代替構成も選べます。
+コードを書かずに同等の最小構成を試す場合は [案1b](plan1b-openwebui.md)を選びます。
 
 > **構築ファイル**: [deploy/plan1/](../deploy/plan1/)(Docker 版)/ 手順: [deployment-guide.md](deployment-guide.md)。本書後半の venv + systemd 手順はコンテナを使わない場合の代替。
 

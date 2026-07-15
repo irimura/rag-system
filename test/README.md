@@ -35,6 +35,6 @@ flowchart LR
 ## 共通の前提
 
 - ゴールデンデータセット: [eval/golden_dataset.sample.jsonl](../eval/golden_dataset.sample.jsonl) の形式(仕様書 §3.1)。実運用では自ドメイン版を `eval/golden_dataset.jsonl` として作成し、環境変数 `GOLDEN_PATH` で指定する
-- サンプルスクリプトは **案2(Qdrant + TEI)構成の Node B 上での実行**を前提とする。案1(Chroma)/案3(OpenSearch)への読み替えは各手順書末尾の補足を参照
+- サンプルスクリプトは **案2(Qdrant + TEI)構成の Node B 上での実行**を前提とする。案1(Chroma)/案3(OpenSearch)への読み替えは各手順書末尾の補足を参照。案1b(Open WebUI 内蔵 RAG)は rag-api の HTTP エンドポイントを持たないため、レベル1評価の対象外とし、GUI での確認または別の評価経路へ読み替える
 - スクリプトは Node B の `127.0.0.1` に公開済みの rag-api(8000)を使い、レベル2の judge 埋め込みだけ TEI(8081)を使う。Qdrant を評価コードから直接呼ばないため、**追加のポート公開は不要**
 - 判定に迷う結果は「不合格側」に倒して記録する(甘い判定は改善の機会を潰す)

@@ -11,7 +11,7 @@ AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化す�
 | ノード | 説明 | ホスト名 | 既定 Instance Type | ルート EBS |
 |---|---|---|---|---|
 | Node A | 最小構成(vLLM) | llm-001 | g6e.xlarge | 200GB |
-| Node B | 案1 最小構成 | app-001 | t3.large | 100GB |
+| Node B | 案1/案1b 最小構成 | app-001 | t3.large | 100GB |
 | Node B | 案2 最小構成 | app-002 | m7i.xlarge | 100GB |
 | Node B | 案3 最小構成 | app-003 | r7i.xlarge | 200GB |
 
@@ -163,7 +163,7 @@ sg_id=$(aws ec2 create-security-group --group-name ${project}-ec2 --description 
 # ノード間通信(同一 SG からの全通信を許可)
 aws ec2 authorize-security-group-ingress --group-id ${sg_id} --protocol -1 --source-group ${sg_id}
 
-# WebUI(利用者ネットワークのみ): 案1=8000 / 案2=3000 / 案3=443
+# WebUI(利用者ネットワークのみ): 案1=8000 / 案1b=3000 / 案2=3000 / 案3=443
 aws ec2 authorize-security-group-ingress --group-id ${sg_id} --protocol tcp --port 8000 --cidr ${user_cidr}
 aws ec2 authorize-security-group-ingress --group-id ${sg_id} --protocol tcp --port 3000 --cidr ${user_cidr}
 aws ec2 authorize-security-group-ingress --group-id ${sg_id} --protocol tcp --port 443  --cidr ${user_cidr}
@@ -238,7 +238,7 @@ aws ec2-instance-connect ssh --instance-id ${app1_id} --os-user ubuntu --connect
 
 #### 管理者端末から WebUI へアクセス(SSH ポートフォワード)
 
-EICE のトンネルは 22/3389 のみ許可されるため、WebUI ポート(案1=8000 / 案2=3000 / 案3=443)へ直接トンネルはできない。EICE 経由で SSH ログインし、その中でローカルフォワードして運ぶ。インスタンスごとに `~/.ssh/config` へ登録すると `ssh ragsys-app-002` のように接続できる(方法 B の ProxyCommand をベースにする)。
+EICE のトンネルは 22/3389 のみ許可されるため、WebUI ポート(案1=8000 / 案1b=3000 / 案2=3000 / 案3=443)へ直接トンネルはできない。EICE 経由で SSH ログインし、その中でローカルフォワードして運ぶ。インスタンスごとに `~/.ssh/config` へ登録すると `ssh ragsys-app-002` のように接続できる(方法 B の ProxyCommand をベースにする)。
 
 ```bash
 # 共通設定(ragsys-*)+ インスタンス別 Host を ~/.ssh/config へ追記(既存設定を消さないよう >> )
@@ -258,6 +258,7 @@ Host ragsys-llm-001
 Host ragsys-app-001
     HostName ${app1_id}
     LocalForward 8000 localhost:8000
+    LocalForward 3000 localhost:3000
 
 Host ragsys-app-002
     HostName ${app2_id}
@@ -272,7 +273,7 @@ EOF
 ```bash
 # 各ノードへ接続(-N: シェルを開かずフォワードのみ保持)
 ssh -N ragsys-app-002    # 案2 の WebUI
-ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-003(案3)/ ssh -N ragsys-llm-001(vLLM API)
+ssh -N ragsys-app-001    # 案1(8000)または案1b(3000)/ ssh -N ragsys-app-003(案3)/ ssh -N ragsys-llm-001(vLLM API)
 ```
 
 接続後、Host に対応する URL をブラウザで開く(llm-001 は WebUI ではなく vLLM API 用)。
@@ -280,7 +281,7 @@ ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-003(案3)/ ssh -N ragsys-llm
 | Host | ノード | ローカル → リモート | アクセス |
 |---|---|---|---|
 | ragsys-llm-001 | llm-001 | 8080 → :8080 | `curl http://localhost:8080/v1/models`(vLLM API・デバッグ用) |
-| ragsys-app-001 | app-001(案1) | 8000 → :8000 | http://localhost:8000 |
+| ragsys-app-001 | app-001(案1/案1b) | 8000 → :8000(案1)または 3000 → :3000(案1b) | http://localhost:8000 または http://localhost:3000 |
 | ragsys-app-002 | app-002(案2) | 3000 → :3000 | http://localhost:3000 |
 | ragsys-app-003 | app-003(案3) | 8443 → :443 | https://localhost:8443 |
 
