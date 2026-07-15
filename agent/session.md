@@ -1,6 +1,6 @@
 # セッションコンテキスト(コーディングエージェント向け引き継ぎ)
 
-最終更新: 2026-07-15(§10 OIDC 認証・グループ認可の方針を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
+最終更新: 2026-07-15(§10 OIDC 認証・グループ認可の実装方針を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
 
 このリポジトリは **vLLM + LangChain による日本語 RAG システムの設計・構築・評価ドキュメント一式**である。コードよりドキュメントが主体で、`deploy/` のアプリコードはサンプル実装(構文検証済み・実ビルド/実行は未実施)。本ファイルは過去セッションの決定事項・規約・注意点の引き継ぎであり、**ここに書かれた決定を無断で覆さないこと**(変更するときはユーザーに確認する)。
 
@@ -132,3 +132,7 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - Qdrant は **単一 collection + payload filter**、OpenSearch は **単一 index + `group` DLS**。グループ別 collection/index はライフサイクル分離要件がある場合のみ
 - 案3は rag-api と OpenSearch Security の二層認可。internal user/backend role から OIDC auth domain(`roles_key: groups`)へ段階移行する
 - ingest は全チャンクへ `group` を付与して全再取り込みし、eval には専用グループ/利用者/token を用意する
+- 実装フェーズでは Open WebUI を v0.9.6 へ更新する。署名付き `X-OpenWebUI-User-Jwt` が利用できる最小版であり、rag-api は JWT 欠落・不正を 401 として平文ヘッダーを信頼しない
+- ローカル所属は各 plan の `auth/groups.json`、文書所属は `documents/<group>/...` の第1階層を正とする。直下ファイルと未知/空所属は fail closed
+- 案3の暫定方式はグループ別 OpenSearch internal user + DLS。Token Exchange は将来パス
+- 評価経路は `EVAL_TOKEN` を `secrets.compare_digest` で検証し、全グループ principal として TC11 の越境試験に使用する

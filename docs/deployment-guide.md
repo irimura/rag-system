@@ -52,6 +52,14 @@ vim .env    # 最低限 VLLM_BASE_URL / VLLM_API_KEY(案1/2/3 は VLLM_MODEL も
 
 取り込みたい文書(PDF / Markdown / テキスト)を `documents/` に配置します。
 
+案1b/2/3 では `.env` のシークレットをすべて別々に `openssl rand -hex 32` で生成します。案2/3 は `FORWARD_USER_INFO_HEADER_JWT_SECRET` と `EVAL_TOKEN`、案3はさらに `OS_GROUP_USER_SECRET` と `KEYCLOAK_DB_PASSWORD` が必要です。
+
+```bash
+cp -v auth/groups.example.json auth/groups.json
+```
+
+案2/3の文書は `documents/<group>/...` に配置します。第1階層(`dept-a` / `dept-b` / `eval`)をチャンクの `group` とし、直下ファイルがある場合は取り込みを fail closed で中止します。
+
 ---
 
 ## 1. 案1 の構築(Chainlit 単一コンテナ)
@@ -96,6 +104,8 @@ docker compose ps
 
 `Workspace > Knowledge` で文書をアップロードし、チャットでその Knowledge を参照して質問します。回答と出典が表示されれば、内蔵 RAG の取り込み・検索・生成経路を確認できています。
 
+グループを Admin Panel で作成し、Knowledge を private に設定して対象グループへ read 権限を付与します。一般ユーザーで所属外 Knowledge が表示・検索されないことを確認します。admin は root 相当のため ACL の受け入れ確認には使用しません。
+
 ## 2. 案2 の構築(Open WebUI + Qdrant + TEI)
 
 ```bash
@@ -114,7 +124,9 @@ curl http://localhost:8000/health        # rag-api    -> {"status":"ok"}
 docker compose --profile ingest run --rm ingest
 
 # 4) RAG API の動作確認(Open WebUI を通さず直接)
+set -a && source .env && set +a
 curl http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer ${EVAL_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"model":"knowledge-rag","messages":[{"role":"user","content":"(文書に関する質問)"}]}'
 ```
@@ -183,7 +195,9 @@ docker compose exec rag-api python -c \
   'import os; from opensearch_client import build_opensearch_client; build_opensearch_client().index(index=os.environ["OS_INDEX"], body={"n02":"must-be-denied"})'
 
 # 9) rag-api の実検索を確認
+set -a && source .env && set +a
 curl http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer ${EVAL_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"model":"knowledge-rag","messages":[{"role":"user","content":"(文書に関する質問)"}]}'
 ```
@@ -195,6 +209,46 @@ curl http://localhost:8000/v1/chat/completions \
 - `rag-api/certs/root-ca.pem` は生成物であり Git 管理しない。OpenSearch イメージを変更またはコンテナを再作成した場合は、手順 4 で同じコンテナから CA を再取得する
 - デモ CA / 証明書と `node-0.example.com` の Docker 内 DNS alias は検証フェーズ専用。本番では組織 CA でノード証明書を発行し、OpenSearch の `opensearch.yml` と `rag-api` の `OS_CA_CERT` を置き換える
 - Security Plugin 無効時に作成した既存 volume を引き継ぐ場合は、必要データを退避し、全コーパスから再取り込みできることを確認してから `opensearch-data` を新規作成する。初期管理者パスワードは初回初期化時にのみ反映される
+
+## 3.1 認証・グループ越境の確認(案2/3)
+
+コマンド例の `${dept_a_jwt}` と `${rag_dept_a_password}` は、実行前に検証環境の値へ置き換えてください。
+
+```bash
+# 認証なしは 401
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/v1/chat/completions -H "Content-Type: application/json" -d '{"model":"knowledge-rag","messages":[{"role":"user","content":"質問"}]}'
+
+# EVAL_TOKEN は全グループを取得可能
+set -a && source .env && set +a
+curl http://localhost:8000/internal/evaluation/retrieve -H "Authorization: Bearer ${EVAL_TOKEN}" -H "Content-Type: application/json" -d '{"question":"質問","groups":["dept-a","dept-b"]}'
+
+# 案2: dept-a principal で dept-b 文書が返らない
+curl http://localhost:8000/internal/evaluation/retrieve -H "X-OpenWebUI-User-Jwt: ${dept_a_jwt}" -H "Content-Type: application/json" -d '{"question":"dept-b 固有語"}'
+
+# 案3: DLS user の直接検索でも dept-b が 0 件
+curl --cacert rag-api/certs/root-ca.pem --resolve node-0.example.com:9200:127.0.0.1 -u "rag_dept-a:${rag_dept_a_password}" https://node-0.example.com:9200/knowledge/_search -H "Content-Type: application/json" -d '{"query":{"term":{"group":"dept-b"}}}'
+```
+
+案3の最後の応答は `hits.total.value=0` を確認します。パスワードは rag-api コンテナ内の `derive_group_password("dept-a")` と同じ導出値です。
+
+## 3.2 Keycloak(検証用 IdP・任意)
+
+既定はローカル認証だけで完結します。OIDC 検証時だけ profile `idp` を起動します。
+
+```bash
+cd deploy/plan${n}
+docker compose --profile idp up -d keycloak
+```
+
+利用端末の hosts に `127.0.0.1 keycloak` を登録し、SSH LocalForward でローカル 8080 を Node B の 8180 へ転送します。
+
+```bash
+ssh -N -L 8080:127.0.0.1:8180 ragsys-app-00${n}
+```
+
+`.env` の OIDC ブロックを有効化し、`OPENID_PROVIDER_URL=http://keycloak:8080/realms/rag/.well-known/openid-configuration`、client ID `open-webui`、検証用固定 secret を設定して Open WebUI を再作成します。alice/bob/carol/eva でログインし、issuer と `groups` claim の同期を確認します。
+
+案3の PostgreSQL initdb script は空の `pg-data` を初期化する初回だけ keycloak_app role/DB を作成します。既存 volume には同等の SQL を別途適用します。本番は issuer/client/secret/redirect URI を組織 IdP と安定した HTTPS 名へ差し替え、検証用の secret、ユーザー、初期パスワードは移行しません。
 
 ## 4. 運用
 
@@ -210,6 +264,8 @@ curl http://localhost:8000/v1/chat/completions \
 
 | 症状 | 原因と対処 |
 |---|---|
+| rag-api が 401 | EVAL_TOKEN または Open WebUI v0.9.6 以降の署名 JWT がない/不正。JWT secret が両サービスで同一か確認 |
+| rag-api が 403 | email が groups.json にない、所属が空、または要求 group が所属外。fail closed のため設定を修正する |
 | rag-api が 503「コレクション/インデックスがありません」 | ingest 未実行。§1〜3 の取り込み手順を実行する |
 | TEI が起動直後に応答しない | 初回のモデルダウンロード中。`docker compose logs tei-embed` で進捗確認(volume `hf-cache` にキャッシュされ 2 回目以降は速い) |
 | OpenSearch が起動ループ | `vm.max_map_count` 未設定(§3-1)、またはヒープ過大。`docker compose logs opensearch` を確認 |
@@ -224,4 +280,7 @@ curl http://localhost:8000/v1/chat/completions \
 2. 投入した文書の内容を質問すると、本文に基づいた回答 + 参考資料(ファイル名)が返る
 3. 文書に存在しない事柄を質問すると「資料からは回答できません」と返る(捏造しない)
 4. `docker compose restart` 後もインデックスと(案1b/2/3)会話履歴が保持されている
-5. 以降の精度評価は [evaluation-spec.md](evaluation-spec.md) の手順で実施する
+5. 認証なしの rag-api アクセスが HTTP 401 で拒否される
+6. dept-a 利用者の検索に dept-b 文書が含まれず、グループ越境が遮断される
+7. (任意) Keycloak OIDC でログインし、グループが同期される
+8. 以降の精度評価は [evaluation-spec.md](evaluation-spec.md) と [TC11](../test/cases/TC11_group_authorization.md) で実施する

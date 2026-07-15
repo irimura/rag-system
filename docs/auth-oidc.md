@@ -120,6 +120,12 @@ OIDC issuer はブラウザ、Open WebUI、OpenSearch から同じ URL に見え
 6. Keycloak で OIDC/group claim/token 中継を結合試験
 7. 本番 IdP へ差し替え、ローカル login との並行期間後に SSO 主体へ移行
 
+## 9.1 サンプル実装の採用方式
+
+デプロイサンプルでは、Open WebUI v0.9.6 以降の署名付き `X-OpenWebUI-User-Jwt` を必須とし、平文転送ヘッダーを信頼しません。ローカル期の所属は各案の `auth/groups.json` から解決します。
+
+案2/3の文書配置は `documents/<group>/...` とし、第1階層をチャンクの `group` に保存します。直下ファイルは fail closed で取り込みを中止します。案3は暫定方式としてグループ別 OpenSearch internal user + DLS を採用し、rag-api の明示 filter と二層で制限します。Token Exchange による利用者 token 中継は本番 IdP 統合時の将来パスです。
+
 ## 10. 公式資料
 
 - [Open WebUI: Environment Variable Configuration](https://docs.openwebui.com/reference/env-configuration/)
