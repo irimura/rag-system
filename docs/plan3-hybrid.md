@@ -69,6 +69,10 @@ flowchart TB
 | LangGraph | 「検索結果が不十分なら検索し直す」ループを持つ。再試行時は試行回数と検索済みクエリをプロンプトへ渡し、直前と異なる観点のクエリを生成する |
 | 代替 | OpenSearch の代わりに **Milvus**(BM25 内蔵の 2.5+)や **Qdrant + 疎ベクトル(bge-m3 の sparse 出力)** でも同アーキテクチャを実現可能 |
 
+## 認証・認可
+
+rag-api のグループ filter に加え、OpenSearch Security の role/DLS をデータストア層の強制点にします。ローカル検証は internal user/backend role、本番は OIDC auth domain と `roles_key: groups` へ段階移行します。詳細は [OIDC 認証・グループ認可 導入設計](auth-oidc.md)を参照してください。
+
 ## ハイブリッド検索の実装例
 
 ### LangChain(EnsembleRetriever + RRF)

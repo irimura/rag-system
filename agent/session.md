@@ -1,6 +1,6 @@
 # セッションコンテキスト(コーディングエージェント向け引き継ぎ)
 
-最終更新: 2026-07-13(§8 レビュー検証結果を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
+最終更新: 2026-07-15(§10 OIDC 認証・グループ認可の方針を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
 
 このリポジトリは **vLLM + LangChain による日本語 RAG システムの設計・構築・評価ドキュメント一式**である。コードよりドキュメントが主体で、`deploy/` のアプリコードはサンプル実装(構文検証済み・実ビルド/実行は未実施)。本ファイルは過去セッションの決定事項・規約・注意点の引き継ぎであり、**ここに書かれた決定を無断で覆さないこと**(変更するときはユーザーに確認する)。
 
@@ -121,3 +121,14 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 初期設計(案1〜3 + 構成要素解説)→ 2 ノード分離(GPU/アプリ)→ BM25 を明示的な選択肢に → 日本語固有チューニング加筆 → 評価仕様 + 公開テストデータ → Node B 構築ファイル一式 → Node A は vLLM 同梱サーバで確定 → CLI 規約適用 → EC2 スペック/AMI/料金 → GPU 要件確定(Ampere+/40GB/CUDA12.8)→ node-a-vllm.md は削除(内容は deploy/node-a/ と node-specs.md に集約)→ AWS 構築手順(単一サブネット・一時 NAT+IGW・EICE・自動停止)→ node-a-pre-install.md を設計と整合(Ubuntu 24.04 確定)
 
 詳細は `git log`(コミットメッセージが決定理由を含む)を参照。
+
+## 10. OIDC 認証・グループ認可の決定事項(2026-07-15)
+
+詳細設計は [docs/auth-oidc.md](../docs/auth-oidc.md)を正とする。デプロイコード変更は次フェーズ。
+
+- 検証用 IdP は **Keycloak**。ローカル認証で先行検証し、本番 IdP 開通後に issuer/client/audience を差し替える
+- Open WebUI はローカル login form と OIDC を併存させ、検証中は手動グループ、本番は IdP group claim 同期へ移行する
+- 案2/3 の rag-api は認証方式非依存の principal とグループ解決を実装し、Vector store 検索へ `group` filter を強制する。これは **N-03(rag-api 無認可)** の恒久対応方針
+- Qdrant は **単一 collection + payload filter**、OpenSearch は **単一 index + `group` DLS**。グループ別 collection/index はライフサイクル分離要件がある場合のみ
+- 案3は rag-api と OpenSearch Security の二層認可。internal user/backend role から OIDC auth domain(`roles_key: groups`)へ段階移行する
+- ingest は全チャンクへ `group` を付与して全再取り込みし、eval には専用グループ/利用者/token を用意する

@@ -50,6 +50,10 @@ flowchart TB
 | Embedding | Node B のプロセス内で sentence-transformers を **CPU 実行**(e5 / bge クラスは CPU で実用速度)。Node A の VRAM は LLM 専用のため使わない |
 | 移行性 | LangChain の `VectorStore` 抽象のおかげで、案2 の Qdrant へはコード数行の変更で移行可能 |
 
+## 認証・認可
+
+Chainlit は認証 hook を提供しますが、ローカル password と OIDC はいずれも callback 実装が必要です。グループを共通 principal へ正規化し、すべての Chroma 検索へ metadata filter を強制します。詳細は [OIDC 認証・グループ認可 導入設計](auth-oidc.md)を参照してください。
+
 ## セットアップ手順(概要)
 
 ```bash

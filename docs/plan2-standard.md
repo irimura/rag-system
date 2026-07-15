@@ -55,6 +55,10 @@ flowchart TB
 | Embedding/Rerank | TEI コンテナに分離。API プロセスが軽くなり、取り込みバッチと問い合わせで同じ埋め込みサーバを共用できる |
 | Qdrant | Rust 製で軽量・高速。メタデータフィルタ(部署・年度など)やスカラー量子化によるメモリ削減に対応 |
 
+## 認証・認可
+
+Open WebUI のログインだけでは外部 rag-api の検索は制限されません。rag-api で利用者情報を検証し、グループを解決して、すべての Qdrant 検索へ `group` payload filter を強制します。詳細は [OIDC 認証・グループ認可 導入設計](auth-oidc.md)を参照してください。
+
 ## docker-compose.yml(骨子)
 
 ```yaml

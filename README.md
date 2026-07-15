@@ -20,6 +20,7 @@
 | [docs/plan1b-openwebui.md](docs/plan1b-openwebui.md) | 案1b: Open WebUI 内蔵 RAG 最小構成(コード不要) |
 | [docs/plan2-standard.md](docs/plan2-standard.md) | 案2: Docker Compose 標準構成 |
 | [docs/plan3-hybrid.md](docs/plan3-hybrid.md) | 案3: ハイブリッド検索・本格構成 |
+| [docs/auth-oidc.md](docs/auth-oidc.md) | Query 系の OIDC/ローカル認証併用とグループ別 Vector store 認可の導入設計 |
 | [docs/rag-components.md](docs/rag-components.md) | RAG 精度向上のための構成要素解説(Loader / Transformer / Embedding / Vector store / Retriever / Rerank) |
 | [docs/evaluation-spec.md](docs/evaluation-spec.md) | RAG 精度評価のテスト仕様書(指標定義・テスト観点 TC01〜TC10・実行手順・合否基準) |
 | [docs/test-data.md](docs/test-data.md) | テストデータ集(Vector store 投入用の公開コーパス・評価用 QA データセットへのリンク) |
@@ -143,6 +144,7 @@ flowchart LR
 | Rerank | プロセス内 CrossEncoder | Open WebUI 内蔵(CPU) | TEI rerank | TEI rerank |
 | 検索方式 | ベクトルのみ | ベクトル(内蔵ハイブリッド可) | ベクトル + MMR | **ハイブリッド(BM25 + ベクトル)+ RRF** |
 | 会話履歴 | なし(メモリ) | 内蔵 SQLite | Open WebUI 内蔵(SQLite) | PostgreSQL |
+| 認証/グループ認可(標準機能) | なし / なし | あり / あり(Knowledge ACL) | WebUI のみあり / 外部 rag-api はなし | WebUI はあり / OpenSearch DLS は未連携 |
 | デプロイ(Node B) | Docker Compose(venv + systemd は代替) | Docker Compose | Docker Compose | Docker Compose |
 | 想定規模 | 個人・PoC(〜数千文書) | 個人・PoC | 部門(〜数十万チャンク) | 全社(数百万チャンク〜) |
 | vLLM 以外の GPU | 不要(CPU で完結) | 不要(CPU で完結) | 不要(TEI は CPU 版。取り込み高速化に任意で追加) | 任意(取り込み・rerank 高速化に Node B へ小型 GPU 追加を検討) |

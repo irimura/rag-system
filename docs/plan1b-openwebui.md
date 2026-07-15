@@ -38,6 +38,10 @@ flowchart LR
 | 会話履歴 | Open WebUI 内蔵 SQLite に保存。履歴を保持しない案1との明確な差分 |
 | 移行性 | 精度の作り込みが必要になったら案2へ移行する。Vector store に互換性はないため文書を再取り込みする |
 
+## 認証・認可
+
+Open WebUI 標準のローカル認証と OIDC は併存でき、private Knowledge にグループ read 権限を付けることでコード変更なしに認可できます。移行と注意点は [OIDC 認証・グループ認可 導入設計](auth-oidc.md)を参照してください。
+
 ## セットアップ手順(概要)
 
 ```bash
