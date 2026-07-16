@@ -128,6 +128,83 @@ OIDC issuer はブラウザ、Open WebUI、OpenSearch から同じ URL に見え
 
 案3の eval principal は全グループをグループ別クライアントで検索するため、同じ文書が複数経路で取得されると RRF スコアが加算され、本番の単一/少数グループ利用者と評価順位がわずかに異なる場合があります。これは暫定 internal user 方式の既知特性です。
 
+## 9.2 SSH トンネル環境での OIDC 通信と redirect_uri 制約
+
+OIDC の Authorization Code フローは、SSH LocalForward を使う閉域環境でも成立します。通信は次の2系統に分かれます。
+
+- **フロントチャネル**: ブラウザと IdP / Open WebUI の間で、ログイン開始、認可エンドポイントへのリダイレクト、ログイン画面の表示、`redirect_uri` への復帰を行います。すべてブラウザの HTTP アクセスであるため LocalForward を通過でき、IdP のインターネット公開は不要です。
+- **バックチャネル**: Open WebUI コンテナから IdP のトークンエンドポイントへ接続し、認可 code をトークンへ交換します。Node B の Docker network 内を直接通信するため、SSH トンネルとは無関係です。
+
+```mermaid
+sequenceDiagram
+    participant B as ブラウザ(利用端末)
+    participant T as SSH トンネル(LocalForward)
+    participant W as Open WebUI(Node B)
+    participant I as IdP(Keycloak / Node B)
+
+    rect rgb(235, 245, 255)
+        Note over B,I: フロントチャネル(ブラウザの HTTP アクセス、SSH トンネル経由)
+        B->>T: WebUI へアクセス(localhost:3000)
+        T->>W: WebUI アクセスを転送
+        W-->>T: OIDC ログイン開始・認可エンドポイントへリダイレクト
+        T-->>B: リダイレクト応答
+        B->>T: IdP 認可エンドポイントへアクセス(keycloak:8080)
+        T->>I: 認可要求を転送
+        I-->>T: 認証用ログイン画面
+        T-->>B: ログイン画面を表示
+        B->>T: 認証情報を送信
+        T->>I: 認証情報を転送
+        I-->>T: redirect_uri(http://localhost:3000/oauth/oidc/callback)へ code 付きで戻る
+        T-->>B: code 付きのリダイレクト応答
+        B->>T: callback へアクセス(code 付き)
+        T->>W: callback を転送
+    end
+    rect rgb(240, 255, 240)
+        Note over W,I: バックチャネル(Docker network 内の直接通信)
+        W->>I: トークンエンドポイントで code を交換
+        I-->>W: ID トークン(groups claim を含む)
+        W->>W: ログインセッションを確立
+    end
+```
+
+唯一の制約は、同じ IdP がブラウザとコンテナで異なる URL に見える場合です。トークンの `iss` は1つであるため、両者から見た issuer URL を一致させます。検証用 Keycloak は §5 のとおり `KC_HOSTNAME=http://keycloak:8080` に固定し、利用端末の hosts に `127.0.0.1 keycloak` を追加したうえで、ローカルの 8080 から Node B の 8180 へ LocalForward して issuer を統一します。
+
+```mermaid
+flowchart LR
+    subgraph CLIENT["利用端末"]
+        HOSTS["hosts<br/>keycloak → 127.0.0.1"]
+        BROWSER["ブラウザ"]
+        L3000["ssh -L<br/>localhost:3000 → Node B:3000"]
+        L8080["ssh -L<br/>localhost:8080 → Node B:8180"]
+        HOSTS -.->|"名前解決"| BROWSER
+        BROWSER -->|"WebUI / callback<br/>localhost:3000"| L3000
+        BROWSER -->|"IdP 認可画面<br/>keycloak:8080"| L8080
+    end
+
+    subgraph NODEB["Node B"]
+        subgraph DOCKER["Docker network"]
+            WEBUI["Open WebUI"]
+            KEYCLOAK["Keycloak<br/>issuer: http://keycloak:8080"]
+            WEBUI -->|"バックチャネル<br/>code / token 交換"| KEYCLOAK
+        end
+    end
+
+    L3000 -->|"LocalForward :3000"| WEBUI
+    L8080 -->|"LocalForward :8180"| KEYCLOAK
+```
+
+issuer と `redirect_uri` はポートを含む URL の完全一致が必要です。各 LocalForward のローカルポートを変更する場合は、ブラウザから見える URL、`KC_HOSTNAME`、IdP に登録する `redirect_uri` の対応するポートも揃えて変更します。
+
+### 本番 IdP が localhost を許可しない場合
+
+検証用 Keycloak には `http://localhost:3000/oauth/oidc/callback` を登録しています。一方、組織の本番 IdP はセキュリティポリシーにより、`localhost` または `http` スキームの redirect URI を拒否する場合があります。申請時に登録可否を確認し、許可されない場合は次の順で対応します。
+
+1. **案3の Nginx と安定したホスト名を使用します。** `https://<公開ホスト名>/oauth/oidc/callback` を IdP へ具体値で登録します。公開ホスト名へのアクセスは SSH トンネルと利用端末の hosts(`公開ホスト名 → 127.0.0.1`)で維持でき、インターネット公開は不要です。ブラウザから見た URL、IdP に登録した `redirect_uri`、Nginx の server 名を一致させ、そのホスト名に対する TLS 証明書を社内 CA 等で発行します。
+2. **検証用の例外を申請します。** IdP 管理者へ localhost redirect の登録を依頼します。RFC 8252 ではネイティブアプリ向けに loopback redirect が認められていますが、Open WebUI のような Web アプリで許可されるかは組織ポリシーに従います。
+3. **検証段階を分離します。** どちらも許可されない場合、OIDC の機能検証は Keycloak で完結させ、本番 IdP との接続は公開ホスト名と TLS 証明書の整備後に行います。
+
+Keycloak の redirect URI wildcard は URI 末尾でだけ使用でき、ホスト部の wildcard(`https://*/...`)は無効です。本番の redirect URI には具体的なホスト名を登録します。
+
 ## 10. 公式資料
 
 - [Open WebUI: Environment Variable Configuration](https://docs.openwebui.com/reference/env-configuration/)
@@ -140,3 +217,4 @@ OIDC issuer はブラウザ、Open WebUI、OpenSearch から同じ URL に見え
 - [OpenSearch: Audit logs](https://docs.opensearch.org/latest/security/audit-logs/index/)
 - [Keycloak: Running Keycloak in a container](https://www.keycloak.org/server/containers)
 - [Keycloak: Configuring the hostname](https://www.keycloak.org/server/hostname)
+- [RFC 8252: OAuth 2.0 for Native Apps](https://www.rfc-editor.org/rfc/rfc8252)
