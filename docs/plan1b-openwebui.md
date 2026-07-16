@@ -35,10 +35,10 @@ flowchart LR
 |---|---|
 | 長所 | Node B はコンテナ 1 個・Python コード 0 行。GUI 設定と環境変数だけで最速に動かせる。ログイン認証・会話履歴も Open WebUI に内蔵 |
 | 短所 | チャンク分割・Retriever 戦略・日本語前処理(neologdn / Sudachi 等)のカスタマイズ余地が小さい。クエリ変換や日本語処理の作り込みには向かない |
-| 検索 DB | Open WebUI 内蔵 Chroma(`VECTOR_DB=chroma`)。文書とインデックスは `open-webui-data` volume に閉じる |
+| ベクトル DB | Open WebUI 内蔵 Chroma(`VECTOR_DB=chroma`)。文書とインデックスは `open-webui-data` volume に閉じる |
 | Embedding | Open WebUI 内蔵 sentence-transformers を Node B の CPU で実行。プレフィックス不要の `BAAI/bge-m3` を既定とする |
 | 会話履歴 | Open WebUI 内蔵 SQLite に保存。履歴を保持しない案1との明確な差分 |
-| 移行性 | 精度の作り込みが必要になったら案2へ移行する。Vector store に互換性はないため文書を再取り込みする |
+| 移行性 | 精度の作り込みが必要になったら案2へ移行する。Vector DB に互換性はないため文書を再取り込みする |
 
 ## 認証・認可
 
@@ -64,7 +64,7 @@ docker compose up -d
 | `OPENAI_API_BASE_URL` | Node A の vLLM OpenAI 互換 API。compose では `.env` の `VLLM_BASE_URL` を注入 | `http://node-a.example.internal:8080/v1` |
 | `OPENAI_API_KEY` | Node A の `--api-key`。compose では `.env` の `VLLM_API_KEY` を注入 | 環境ごとに変更 |
 | `ENABLE_OLLAMA_API` | Ollama 接続を無効化 | `false` |
-| `VECTOR_DB` | Knowledge の Vector store | `chroma` |
+| `VECTOR_DB` | Knowledge の Vector DB | `chroma` |
 | `RAG_EMBEDDING_MODEL` | 内蔵 sentence-transformers のモデル | `BAAI/bge-m3` |
 | `ENABLE_RAG_HYBRID_SEARCH` | 内蔵 BM25 + ベクトル検索 | `true` |
 | `RAG_RERANKING_MODEL` | 内蔵 CrossEncoder rerank モデル | `BAAI/bge-reranker-v2-m3` |

@@ -46,7 +46,7 @@ flowchart TB
 |---|---|
 | 長所 | Node B 側の構成要素が最少。依存はすべて pip。障害点が少なくデバッグ容易。GPU ノードには一切手を入れない |
 | 短所 | プロセス再起動で会話履歴消失。同時アクセスに弱い。Embedding/Rerank が API プロセスの CPU/メモリを消費 |
-| 検索 DB | Chroma を**組み込みモード**(サーバ不要、ローカルディレクトリに永続化)で使用。データは Node B に閉じる |
+| ベクトル DB | Chroma を**組み込みモード**(サーバ不要、ローカルディレクトリに永続化)で使用。データは Node B に閉じる |
 | Embedding | Node B のプロセス内で sentence-transformers を **CPU 実行**(e5 / bge クラスは CPU で実用速度)。Node A の VRAM は LLM 専用のため使わない |
 | 移行性 | LangChain の `VectorStore` 抽象のおかげで、案2 の Qdrant へはコード数行の変更で移行可能 |
 
@@ -84,7 +84,7 @@ splitter = RecursiveCharacterTextSplitter(
 )
 chunks = splitter.split_documents(docs)
 
-# 3. Embedding + 4. Vector store
+# 3. Embedding + 4. Vector DB
 embeddings = build_embeddings()  # e5 系では query:/passage: prefix を自動付与
 existing = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
 existing.delete_collection()     # 全コーパスを投入する前に既存コレクションを削除

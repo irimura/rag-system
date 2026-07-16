@@ -1,9 +1,9 @@
 # 案3: ハイブリッド検索・本格構成(全社利用向け)
 
 **BM25(キーワード検索)とベクトル検索を併用するハイブリッド検索**を核とした本格構成。
-検索 DB に OpenSearch(kuromoji による日本語形態素解析 + k-NN を 1 基盤で両立)を採用し、
+ベクトル DB に OpenSearch(kuromoji による日本語形態素解析 + k-NN を 1 基盤で両立)を採用し、
 Nginx による TLS 終端、PostgreSQL による会話履歴永続化、LangGraph によるエージェント的な検索フローを備えます。
-基本は Node A(GPU / vLLM)+ Node B(アプリ+データ)の 2 ノードで開始し、負荷に応じて **OpenSearch を Node C(検索 DB 専用ノード)に分離**する拡張パスを持ちます。
+基本は Node A(GPU / vLLM)+ Node B(アプリ+データ)の 2 ノードで開始し、負荷に応じて **OpenSearch を Node C(ベクトル DB 専用ノード、全文検索も兼用)に分離**する拡張パスを持ちます。
 
 > **構築ファイル**: [deploy/plan3/](../deploy/plan3/)(compose + nginx conf + kuromoji 入り OpenSearch イメージ + LangGraph 実装)/ 手順: [deployment-guide.md](deployment-guide.md)。本書のコードは設計説明用の抜粋。
 
@@ -63,7 +63,7 @@ flowchart TB
 | 観点 | 内容 |
 |---|---|
 | 長所 | 型番・製品名・人名など**字面一致が重要なクエリに強い**(ベクトル検索単独の弱点を補完)。OpenSearch は全文検索・ベクトル・集計・監査ログを 1 基盤で担える |
-| 短所 | OpenSearch は JVM ベースでメモリ要件が高い(最低 8GB、推奨 16GB〜)。運用ノウハウが必要。Node B のメモリが逼迫したら Node C(検索 DB 専用ノード)への分離を検討 |
+| 短所 | OpenSearch は JVM ベースでメモリ要件が高い(最低 8GB、推奨 16GB〜)。運用ノウハウが必要。Node B のメモリが逼迫したら Node C(ベクトル DB 専用ノード、全文検索も兼用)への分離を検討 |
 | 日本語対応 | `analysis-kuromoji`(または `analysis-sudachi`)プラグインで形態素解析ベースの BM25 を構成。同じ本文を bi-gram でも持つマルチフィールド + 同義語辞書(synonym filter)で未知語・表記ゆれの取りこぼしを削減 |
 | 順位統合 | BM25 とベクトルの結果を **RRF(Reciprocal Rank Fusion)** で統合(OpenSearch 2.19+ はネイティブ対応。LangChain 側の EnsembleRetriever でも実装可) |
 | LangGraph | 「検索結果が不十分なら検索し直す」ループを持つ。再試行時は試行回数と検索済みクエリをプロンプトへ渡し、直前と異なる観点のクエリを生成する |

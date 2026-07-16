@@ -112,7 +112,7 @@ embeddings = HuggingFaceEndpointEmbeddings(model="http://tei-embed:80")
 - 多言語モデル(e5 / bge-m3)でも日本語は十分実用だが、**日本語特化モデル(ruri / GLuCoSE 系)が JMTEB の Retrieval タスクでは上回ることが多い**。JMTEB(日本語埋め込みベンチマーク)の Retrieval スコアを第一の参考にする
 - e5 系の 512 トークン上限 × 日本語のトークン効率の悪さの組み合わせに注意(§2 参照)。**チャンクサイズとモデルはセットで決める**
 
-## 4. Vector Store — 検索 DB
+## 4. Vector DB — ベクトル DB
 
 **役割:** チャンクのベクトルとメタデータを保存し、近傍検索(ANN)を提供する。
 
@@ -178,7 +178,7 @@ BM25 は製品ではなく**スコアリングアルゴリズム**(Okapi BM25)�
 |---|---|---|---|
 | rank_bm25(LangChain `BM25Retriever`) | in-memory ライブラリ | 〜数万チャンク | **案1/案2 のままサーバ追加なしでハイブリッド化を試す**最短ルート |
 | OpenSearch / Elasticsearch | 検索サーバ(Lucene の BM25) | 数百万チャンク〜 | 案3。kuromoji 日本語解析・永続化・レプリカ等の運用機能込み |
-| Milvus 2.5+ 内蔵 BM25 / Qdrant 疎ベクトル | Vector store 内蔵 | 中〜大規模 | 検索基盤を増やさず 1 つの DB でハイブリッドを完結させたい場合 |
+| Milvus 2.5+ 内蔵 BM25 / Qdrant 疎ベクトル | Vector DB 内蔵 | 中〜大規模 | 検索基盤を増やさず 1 つの DB でハイブリッドを完結させたい場合 |
 
 **`BM25Retriever` を日本語で使う場合は形態素解析が必須。** デフォルトのトークナイズは空白区切り(`str.split`)のため、分かち書きされない日本語ではほぼ機能しない。SudachiPy 等を `preprocess_func` に渡す:
 
@@ -220,7 +220,7 @@ bm25_retriever = BM25Retriever.from_documents(
 ```mermaid
 flowchart LR
     Q(["クエリ"]) --> R["Retriever<br/>(Bi-Encoder)<br/>高速・粗い"]
-    V[("Vector Store<br/>100 万チャンク")] --> R
+    V[("Vector DB<br/>100 万チャンク")] --> R
     R -->|"候補 20〜50 件"| RR["Reranker<br/>(Cross-Encoder)<br/>低速・精密"]
     RR -->|"top 3〜5 件"| L(["LLM"])
 ```
@@ -264,9 +264,9 @@ retriever = ContextualCompressionRetriever(
 | ★★★ | Reranker 導入(広く取って絞る) | Retriever + Rerank |
 | ★★★ | 見出し構造を保つ分割・日本語セパレータ・文脈付記 | Transformer |
 | ★★☆ | 日本語に強い埋め込みモデル選定(+プレフィックス遵守) | Embedding |
-| ★★☆ | ハイブリッド検索(BM25 併用) | Vector store + Retriever |
+| ★★☆ | ハイブリッド検索(BM25 併用) | Vector DB + Retriever |
 | ★★☆ | クエリ変換(Multi-Query / 会話履歴を踏まえた書き換え) | Retriever |
 | ★★☆ | 日本語処理の作り込み(NFKC/neologdn 正規化・トークン上限とチャンクの整合・形態素解析 BM25・同義語辞書) | 全要素(各節の「日本語固有のポイント」参照) |
-| ★☆☆ | 抽出品質改善(表・OCR)・メタデータフィルタ | Loader / Vector store |
+| ★☆☆ | 抽出品質改善(表・OCR)・メタデータフィルタ | Loader / Vector DB |
 
 改善は必ず **評価セット(想定質問と正解文書のペア 30〜50 件)** を作って Hit Rate / MRR で計測しながら進めてください。感覚ベースのチューニングは往々にして退化を見逃します(Ragas 等の OSS 評価ツールが利用可能)。モデル選定の一般比較には日本語公開ベンチマーク — **JMTEB**(埋め込み)、**JQaRA / JaCWIR**(検索・リランク)— も参考になりますが、最終判断は自ドメインの評価セットで行ってください。

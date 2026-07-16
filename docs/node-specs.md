@@ -9,7 +9,7 @@
 | ノード | 役割 | Instance Type(推奨) | AMI |
 |---|---|---|---|
 | **Node A** | vLLM(推論専用) | **g6e.2xlarge**(最小: g6e.xlarge) | Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04) |
-| **Node B** | WebUI / RAG API / 検索 DB / TEI | 案毎に下表(例: 案2 は m7i.xlarge〜) | Ubuntu Server 24.04 LTS(Canonical 公式) |
+| **Node B** | WebUI / RAG API / ベクトル DB / TEI | 案毎に下表(例: 案2 は m7i.xlarge〜) | Ubuntu Server 24.04 LTS(Canonical 公式) |
 
 ---
 

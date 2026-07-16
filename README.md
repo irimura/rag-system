@@ -20,10 +20,10 @@
 | [docs/plan1b-openwebui.md](docs/plan1b-openwebui.md) | 案1b: Open WebUI 内蔵 RAG 最小構成(コード不要) |
 | [docs/plan2-standard.md](docs/plan2-standard.md) | 案2: Docker Compose 標準構成 |
 | [docs/plan3-hybrid.md](docs/plan3-hybrid.md) | 案3: ハイブリッド検索・本格構成 |
-| [docs/auth-oidc.md](docs/auth-oidc.md) | Query 系の OIDC/ローカル認証併用とグループ別 Vector store 認可の導入設計 |
-| [docs/rag-components.md](docs/rag-components.md) | RAG 精度向上のための構成要素解説(Loader / Transformer / Embedding / Vector store / Retriever / Rerank) |
+| [docs/auth-oidc.md](docs/auth-oidc.md) | Query 系の OIDC/ローカル認証併用とグループ別 Vector DB 認可の導入設計 |
+| [docs/rag-components.md](docs/rag-components.md) | RAG 精度向上のための構成要素解説(Loader / Transformer / Embedding / Vector DB / Retriever / Rerank) |
 | [docs/evaluation-spec.md](docs/evaluation-spec.md) | RAG 精度評価のテスト仕様書(指標定義・テスト観点 TC01〜TC10・実行手順・合否基準) |
-| [docs/test-data.md](docs/test-data.md) | テストデータ集(Vector store 投入用の公開コーパス・評価用 QA データセットへのリンク) |
+| [docs/test-data.md](docs/test-data.md) | テストデータ集(Vector DB 投入用の公開コーパス・評価用 QA データセットへのリンク) |
 | [eval/golden_dataset.sample.jsonl](eval/golden_dataset.sample.jsonl) | ゴールデンデータセットのサンプル(テスト観点別 10 ケース) |
 | [test/](test/) | 評価の実行手順書(レベル1/レベル2 の手順 + 実行スクリプト、テスト観点別のケース手順書) |
 | [docs/node-specs.md](docs/node-specs.md) | ノードスペック選定(AWS EC2 の Instance Type / AMI / EBS / セキュリティグループ / 月額試算) |
@@ -60,7 +60,7 @@ flowchart LR
         LLM --> API --> UI
     end
 
-    VDB[("Vector Store<br/>(検索 DB)")]
+    VDB[("Vector DB<br/>(ベクトル DB)")]
     EM1 --> VDB
     RET <--> VDB
 ```
@@ -73,7 +73,7 @@ flowchart LR
 | **RAG API** | LangChain によるオーケストレーション層 | FastAPI + LangChain / LangGraph |
 | **LLM 推論** | 回答生成(稼働済み) | vLLM(OpenAI 互換エンドポイント) |
 | **Embedding** | テキストのベクトル化 | `multilingual-e5` / `BAAI/bge-m3` / `ruri` を sentence-transformers・TEI・Infinity・vLLM(`--runner pooling`)で配信 |
-| **検索 DB(Vector store)** | ベクトル(+全文)インデックスの保存・検索 | Chroma / Qdrant / pgvector / Milvus / OpenSearch |
+| **ベクトル DB(Vector DB)** | ベクトル(+全文)インデックスの保存・検索 | Chroma / Qdrant / pgvector / Milvus / OpenSearch |
 | **キーワード検索(Okapi BM25)** | 字面一致に強い全文検索。ハイブリッド検索の片翼 | rank_bm25(`BM25Retriever`・in-memory)/ OpenSearch(Lucene BM25 + kuromoji)/ Milvus 2.5+ 内蔵 BM25 |
 | **Retriever** | クエリに対する関連文書の取得戦略 | LangChain Retriever(similarity / MMR / BM25 / Hybrid / Multi-Query 等) |
 | **Reranker** | 取得結果の再順位付けによる精度向上 | `BAAI/bge-reranker-v2-m3`(CrossEncoder / TEI rerank) |
@@ -97,7 +97,7 @@ flowchart LR
         UI["WebUI"]
         API["RAG API<br/>(LangChain)"]
         TEI["Embedding / Rerank<br/>(CPU 実行)"]
-        VDB[("Vector store")]
+        VDB[("Vector DB")]
         PG[("PostgreSQL<br/>※案3")]
         UI --> API
         API --> TEI
@@ -118,7 +118,7 @@ flowchart LR
 | 観点 | 内容 |
 |---|---|
 | リソース競合の回避 | vLLM はデフォルトで VRAM の約 9 割を確保し、CPU も前処理で消費する。OpenSearch の JVM ヒープや embedding モデルを同居させると互いに OOM リスクを持ち込み合う |
-| データとステートの分離 | vLLM は完全にステートレス。一方 Vector store・PostgreSQL・取り込み済みインデックスは「壊れたら困るデータ」。CUDA/ドライバ更新や再起動の頻度が高い GPU ノードにデータを置かない |
+| データとステートの分離 | vLLM は完全にステートレス。一方 Vector DB・PostgreSQL・取り込み済みインデックスは「壊れたら困るデータ」。CUDA/ドライバ更新や再起動の頻度が高い GPU ノードにデータを置かない |
 | ライフサイクルの独立 | GPU ノードの増強・交換・他用途との共用がデータ側に影響しない。バックアップ対象は Node B に集約される |
 
 ### 設計上の補足
@@ -139,7 +139,7 @@ flowchart LR
 | ノード構成 | Node A + Node B | Node A + Node B | Node A + Node B | Node A + Node B(将来 DB を Node C に分離可) |
 | WebUI | Chainlit(API 同居) | Open WebUI + Nginx(TLS) | Open WebUI + Nginx(TLS) | Open WebUI + Nginx(TLS) |
 | RAG API | Chainlit プロセス内 | Open WebUI 内蔵 RAG(コード不要) | FastAPI + LangChain | FastAPI + LangGraph |
-| 検索 DB | Chroma(組み込み) | 内蔵 Chroma | Qdrant | OpenSearch(Hybrid)or Milvus |
+| ベクトル DB | Chroma(組み込み) | 内蔵 Chroma | Qdrant | OpenSearch(Hybrid)or Milvus |
 | Embedding | プロセス内(sentence-transformers) | Open WebUI 内蔵(CPU) | TEI(専用コンテナ) | TEI(専用コンテナ) |
 | Rerank | プロセス内 CrossEncoder | Open WebUI 内蔵(CPU) | TEI rerank | TEI rerank |
 | 検索方式 | ベクトルのみ | ベクトル(内蔵ハイブリッド可) | ベクトル + MMR | **ハイブリッド(BM25 + ベクトル)+ RRF** |
@@ -183,11 +183,11 @@ flowchart LR
 | FastAPI / Uvicorn | API サーバ | MIT / BSD-3 |
 | Chainlit | WebUI(案1) | Apache-2.0 |
 | Open WebUI | WebUI(案1b/2/3) | BSD-3 ベース(ブランディング条項付き。無償利用可) |
-| Chroma | Vector store(案1/1b) | Apache-2.0 |
-| Qdrant | Vector store(案2) | Apache-2.0 |
-| Milvus | Vector store(案3 代替) | Apache-2.0 |
+| Chroma | Vector DB(案1/1b) | Apache-2.0 |
+| Qdrant | Vector DB(案2) | Apache-2.0 |
+| Milvus | Vector DB(案3 代替) | Apache-2.0 |
 | OpenSearch | ハイブリッド検索(案3) | Apache-2.0 |
-| pgvector / PostgreSQL | Vector store 代替 / メタデータ DB | PostgreSQL License |
+| pgvector / PostgreSQL | Vector DB 代替 / メタデータ DB | PostgreSQL License |
 | rank_bm25 | Okapi BM25 実装(in-memory、`BM25Retriever` のバックエンド) | Apache-2.0 |
 | SudachiPy + SudachiDict(+同義語辞書) | 日本語形態素解析(BM25 のトークナイズ・同義語展開) | Apache-2.0 |
 | neologdn | 日本語テキスト正規化(表記ゆれの吸収) | Apache-2.0 |

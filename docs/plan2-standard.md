@@ -2,7 +2,7 @@
 
 各コンポーネントをコンテナに分離し、**アプリノード(Node B)上に Docker Compose で構築**する標準構成。
 vLLM は GPU ノード(Node A)で稼働済みのものを HTTP 経由で利用し、Node A には手を入れません。
-WebUI に Open WebUI(認証・会話履歴内蔵)、検索 DB に Qdrant、Embedding/Rerank は TEI(Text Embeddings Inference)専用コンテナ(CPU 版)に分離します。
+WebUI に Open WebUI(認証・会話履歴内蔵)、ベクトル DB に Qdrant、Embedding/Rerank は TEI(Text Embeddings Inference)専用コンテナ(CPU 版)に分離します。
 
 > **構築ファイル**: [deploy/plan2/](../deploy/plan2/)(完全版 compose + rag-api 実装)/ 手順: [deployment-guide.md](deployment-guide.md)。本書のコードは設計説明用の抜粋。
 
@@ -22,7 +22,7 @@ flowchart TB
             API --> LC
         end
 
-        QD[("Qdrant :6333<br/>Vector store<br/>(named volume 永続化)")]
+        QD[("Qdrant :6333<br/>Vector DB<br/>(named volume 永続化)")]
         TEI_E["TEI(embed / CPU):8081<br/>BAAI/bge-m3"]
         TEI_R["TEI(rerank / CPU):8082<br/>bge-reranker-v2-m3"]
 

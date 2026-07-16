@@ -124,7 +124,7 @@ flowchart LR
 評価前に以下を記録・固定する。1 つでも変えたら「別の実験」として記録する。
 
 - コーパスのスナップショット(文書一覧とハッシュ)
-- チャンク分割パラメータ / Embedding モデルと版 / Vector store のインデックスパラメータ
+- チャンク分割パラメータ / Embedding モデルと版 / Vector DB のインデックスパラメータ
 - Retriever 設定(k、search_type、ハイブリッド重み)/ Reranker モデルと top_n
 - LLM(vLLM のモデル・temperature=0)/ プロンプトテンプレート
 - 評価用 judge LLM の設定(Ragas に vLLM を指定、temperature=0)

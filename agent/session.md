@@ -16,7 +16,7 @@
 | ノード | 役割 | ホスト名 | Instance Type | AMI |
 |---|---|---|---|---|
 | **Node A** | GPU / vLLM 推論専用 | llm-001 | g6e.xlarge(最小)〜 g6e.2xlarge(推奨) | Deep Learning Base OSS Nvidia Driver GPU AMI (**Ubuntu 24.04**) |
-| **Node B** | アプリ+データ(WebUI/RAG API/検索DB/TEI) | app-001/002/003(案1/2/3) | t3.large / m7i.xlarge / r7i.xlarge(案別最小) | Ubuntu Server 24.04 LTS(素の Canonical AMI) |
+| **Node B** | アプリ+データ(WebUI/RAG API/ベクトル DB/TEI) | app-001/002/003(案1/2/3) | t3.large / m7i.xlarge / r7i.xlarge(案別最小) | Ubuntu Server 24.04 LTS(素の Canonical AMI) |
 
 - GPU 確定要件: **Ampere 世代以降・VRAM 40GB+・CUDA 12.8 対応、NVIDIA Driver + NVIDIA Container Toolkit**
 - **OS は Ubuntu 24.04 で確定**(利用する vLLM Docker イメージが 24.04 ベースのため。22.04 に戻さない)
@@ -130,7 +130,7 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - バックチャネルは The Internet 上の IdP 向け **NAT Gateway 常設**と、別 VPC 上の IdP 向け **VPC ピアリング**を両論併記する。具体手順は `docs/aws-provisioning.md` §2.3 を正とする
 - 検証用 IdP は **Keycloak**。外部 IdP の開通・経路整備前に OIDC フロー全体をネットワーク変更なしで先行検証する専用手段として維持し、本番運用では profile `idp` を起動しない
 - Open WebUI はローカル login form と OIDC を併存させ、検証中は手動グループ、本番は IdP group claim 同期へ移行する
-- 案2/3 の rag-api は認証方式非依存の principal とグループ解決を実装し、Vector store 検索へ `group` filter を強制する。これは **N-03(rag-api 無認可)** の恒久対応方針
+- 案2/3 の rag-api は認証方式非依存の principal とグループ解決を実装し、Vector DB 検索へ `group` filter を強制する。これは **N-03(rag-api 無認可)** の恒久対応方針
 - Qdrant は **単一 collection + payload filter**、OpenSearch は **単一 index + `group` DLS**。グループ別 collection/index はライフサイクル分離要件がある場合のみ
 - 案3は rag-api と OpenSearch Security の二層認可。internal user/backend role から OIDC auth domain(`roles_key: groups`)へ段階移行する
 - ingest は全チャンクへ `group` を付与して全再取り込みし、eval には専用グループ/利用者/token を用意する
