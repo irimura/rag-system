@@ -168,9 +168,9 @@ sg_id=$(aws ec2 create-security-group --group-name ${project}-ec2 --description 
 # ノード間通信(同一 SG からの全通信を許可)
 aws ec2 authorize-security-group-ingress --group-id ${sg_id} --protocol -1 --source-group ${sg_id}
 
-# WebUI(利用者ネットワークのみ): 案1=8000 / 案1b=3000 / 案2=3000 / 案3=443
+# WebUI(利用者ネットワークのみ): 案1=8000 / 案1b・案2・案3=80/443(Nginx)
 aws ec2 authorize-security-group-ingress --group-id ${sg_id} --protocol tcp --port 8000 --cidr ${user_cidr}
-aws ec2 authorize-security-group-ingress --group-id ${sg_id} --protocol tcp --port 3000 --cidr ${user_cidr}
+aws ec2 authorize-security-group-ingress --group-id ${sg_id} --protocol tcp --port 80   --cidr ${user_cidr}
 aws ec2 authorize-security-group-ingress --group-id ${sg_id} --protocol tcp --port 443  --cidr ${user_cidr}
 ```
 
@@ -244,7 +244,7 @@ aws ec2-instance-connect ssh --instance-id ${app1_id} --os-user ubuntu --connect
 
 #### 管理者端末から WebUI へアクセス(SSH ポートフォワード)
 
-EICE のトンネルは 22/3389 のみ許可されるため、WebUI ポート(案1=8000 / 案1b=3000 / 案2=3000 / 案3=443)へ直接トンネルはできない。EICE 経由で SSH ログインし、その中でローカルフォワードして運ぶ。インスタンスごとに `~/.ssh/config` へ登録すると `ssh ragsys-app-002` のように接続できる(方法 B の ProxyCommand をベースにする)。
+EICE のトンネルは 22/3389 のみ許可されるため、WebUI ポート(案1=8000 / 案1b・案2・案3=80/443)へ直接トンネルはできない。EICE 経由で SSH ログインし、その中でローカルフォワードして運ぶ。インスタンスごとに `~/.ssh/config` へ登録すると `ssh ragsys-app-002` のように接続できる(方法 B の ProxyCommand をベースにする)。
 
 ```bash
 # 共通設定(ragsys-*)+ インスタンス別 Host を ~/.ssh/config へ追記(既存設定を消さないよう >> )
@@ -267,11 +267,11 @@ Host ragsys-app-001
 
 Host ragsys-app-001b
     HostName ${app1b_id}
-    LocalForward 3000 localhost:3000
+    LocalForward 8441 localhost:443
 
 Host ragsys-app-002
     HostName ${app2_id}
-    LocalForward 3000 localhost:3000
+    LocalForward 8442 localhost:443
 
 Host ragsys-app-003
     HostName ${app3_id}
@@ -291,8 +291,8 @@ ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-001b(案1b)/ ssh -N ragsys-a
 |---|---|---|---|
 | ragsys-llm-001 | llm-001 | 8080 → :8080 | `curl http://localhost:8080/v1/models`(vLLM API・デバッグ用) |
 | ragsys-app-001 | app-001(案1) | 8000 → :8000 | http://localhost:8000 |
-| ragsys-app-001b | app-001b(案1b) | 3000 → :3000 | http://localhost:3000 |
-| ragsys-app-002 | app-002(案2) | 3000 → :3000 | http://localhost:3000 |
+| ragsys-app-001b | app-001b(案1b) | 8441 → :443 | https://localhost:8441 |
+| ragsys-app-002 | app-002(案2) | 8442 → :443 | https://localhost:8442 |
 | ragsys-app-003 | app-003(案3) | 8443 → :443 | https://localhost:8443 |
 
 > - WebUI ポートを SG で外部公開する必要はない(トラフィックは 22 番トンネル内を通る)。

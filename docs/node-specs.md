@@ -77,6 +77,8 @@ GPU インスタンスの選定は、次の順で絞り込みます。
 | 案2 | m7i.xlarge(4vCPU/16GB) | m7i.2xlarge(8vCPU/32GB) | TEI ×2 + Qdrant + WebUI |
 | 案3 | r7i.xlarge(4vCPU/32GB) | **r7i.2xlarge(8vCPU/64GB)** | OpenSearch の JVM ヒープ(`OS_HEAP`)+ヒープ外メモリでメモリ優先型(r 系)が適する |
 
+案1b・案2への NGINX 追加のオーバーヘッドは軽微(常駐数十 MB)のため、推奨 Instance Type は据え置きとします。
+
 - m7i/r7i(Intel)は例示です。同世代の AMD(m7a/r7a)は同スペックでやや安価なので、リージョンの提供状況と単価で選んで構いません
 - **ARM(Graviton, m7g/r7g)は避けてください**。本構成のコンテナイメージ(TEI CPU 版等)は x86_64 前提で検証しているため
 - AMI は **Ubuntu Server 24.04 LTS(Canonical 公式、素の AMI)**。GPU がないので Deep Learning AMI は不要で、Docker は手順書 [deployment-guide.md](deployment-guide.md) §0.1 で導入します
@@ -98,7 +100,7 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 | ルール | 送信元 | 宛先 | ポート |
 |---|---|---|---|
 | vLLM API | Node B の SG | Node A | 8080/tcp |
-| WebUI(案1/案2/案3) | 利用者ネットワーク(社内 CIDR 等) | Node B | 8000 / 3000 / 443 |
+| WebUI(案1/案1b/案2/案3) | 利用者ネットワーク(社内 CIDR 等) | Node B | 8000(案1) / 80・443(案1b/案2/案3) |
 | SSH 管理 | 管理端末の CIDR(または SSM Session Manager を使い閉じる) | 両ノード | 22/tcp |
 
 - vLLM の `--api-key` は SG があっても設定する(多層防御。[deploy/node-a/.env.example](../deploy/node-a/.env.example) の `VLLM_API_KEY`)

@@ -6,6 +6,10 @@ deploy/**/documents/*
 !deploy/**/documents/.gitkeep
 
 # TLS 証明書・秘密鍵
+deploy/plan1b/nginx/certs/*
+!deploy/plan1b/nginx/certs/.gitkeep
+deploy/plan2/nginx/certs/*
+!deploy/plan2/nginx/certs/.gitkeep
 deploy/plan3/nginx/certs/*
 !deploy/plan3/nginx/certs/.gitkeep
 deploy/plan3/rag-api/certs/root-ca.pem

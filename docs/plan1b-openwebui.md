@@ -12,9 +12,11 @@ flowchart LR
     U(["ユーザー<br/>ブラウザ"])
 
     subgraph nodeB["Node B: アプリ+データノード<br/>(Ubuntu / 通常サーバ・RAM 8GB〜)"]
-        OWUI["Open WebUI :3000<br/>WebUI + 内蔵 RAG"]
+        NGINX["Nginx :80/:443<br/>TLS 終端"]
+        OWUI["Open WebUI :8080<br/>ホスト :3000 は内部/デバッグ用<br/>WebUI + 内蔵 RAG"]
         EMB["内蔵 Embedding / Rerank<br/>sentence-transformers / CPU"]
         CH[("内蔵 Chroma<br/>open-webui-data")]
+        NGINX --> OWUI
         OWUI --> EMB
         EMB <--> CH
     end
@@ -23,7 +25,7 @@ flowchart LR
         VLLM["vLLM(稼働済み・推論専用)<br/>OpenAI 互換 API :8080"]
     end
 
-    U -->|"HTTP :3000"| OWUI
+    U -->|"HTTPS :443"| NGINX
     OWUI -->|"chat/completions(HTTP)"| VLLM
 ```
 
@@ -49,10 +51,11 @@ Open WebUI 標準のローカル認証と OIDC は併存でき、private Knowled
 cd deploy/plan1b
 cp -v .env.example .env
 vim .env
+# TLS 証明書の生成手順は deployment-guide.md §1b を参照
 docker compose up -d
 ```
 
-ブラウザで `http://${node_b}:3000` を開いて初回管理者を登録し、vLLM のモデルが表示されることを確認します。`Workspace > Knowledge` から文書をアップロードし、チャットで Knowledge を参照して質問します。
+ブラウザで `https://${node_b}/` を開き(自己署名の場合は警告を承認)、初回管理者を登録し、vLLM のモデルが表示されることを確認します。`Workspace > Knowledge` から文書をアップロードし、チャットで Knowledge を参照して質問します。
 
 ## 設定のポイント
 

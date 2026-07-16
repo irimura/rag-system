@@ -1,11 +1,23 @@
 # 案2: Docker Compose 標準構成(Node B)
 # 構築手順: docs/deployment-guide.md
-# デバッグ用ポート(qdrant/tei/rag-api)は 127.0.0.1 バインドで外部非公開
+# 外部公開は nginx(80/443)のみ。他は 127.0.0.1 バインド
 services:
+  nginx:
+    image: nginx:1.30.3
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - open-webui
+    restart: unless-stopped
+
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.9.6
     ports:
-      - "3000:8080"
+      - "127.0.0.1:3000:8080"
     environment:
       - OPENAI_API_BASE_URL=http://rag-api:8000/v1
       - OPENAI_API_KEY=dummy

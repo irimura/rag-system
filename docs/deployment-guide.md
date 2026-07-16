@@ -5,11 +5,11 @@
 | 案 | 構築ファイル | 公開ポート | 主なパラメータファイル |
 |---|---|---|---|
 | 案1 | [deploy/plan1/](../deploy/plan1/) | 8000(Chainlit) | `.env` |
-| 案1b | [deploy/plan1b/](../deploy/plan1b/) | 3000(Open WebUI) | `.env` |
-| 案2 | [deploy/plan2/](../deploy/plan2/) | 3000(Open WebUI) | `.env` |
+| 案1b | [deploy/plan1b/](../deploy/plan1b/) | 80/443(Nginx) | `.env`、`nginx/conf.d/rag.conf` |
+| 案2 | [deploy/plan2/](../deploy/plan2/) | 80/443(Nginx) | `.env`、`nginx/conf.d/rag.conf` |
 | 案3 | [deploy/plan3/](../deploy/plan3/) | 80/443(Nginx) | `.env`、`nginx/conf.d/rag.conf`、`opensearch/index-mapping.json` |
 
-> デバッグ用ポート(Qdrant 6333、TEI 8081/8082、rag-api 8000、OpenSearch 9200)は `127.0.0.1` バインドで外部非公開。Node A(vLLM)には一切手を入れません。
+> デバッグ用ポート(Open WebUI 3000、Qdrant 6333、TEI 8081/8082、rag-api 8000、OpenSearch 9200)は `127.0.0.1` バインドで外部非公開。Node A(vLLM)には一切手を入れません。
 
 > 検証フェーズのコンテナタグと Python requirements はマイナー系列以上を明示して固定済みです。再検証なしに `latest` / `main` へ戻さないでください。digest 固定を含む最終更新方針は運用設計フェーズで決定します。
 
@@ -93,16 +93,19 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000   # -> 200
 ```bash
 cd deploy/plan1b
 
-# 1) 起動
+# 1) Nginx の TLS 証明書を配置(検証用は自己署名。本番は社内 CA / Let's Encrypt)
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout nginx/certs/server.key -out nginx/certs/server.crt -subj "/CN=${node_b_hostname}"
+
+# 2) 起動
 # 初回は Open WebUI と embedding/rerank モデルをダウンロードする
 docker compose up -d
 
-# 2) 確認
+# 3) 確認
 docker compose logs -f open-webui
 docker compose ps
 ```
 
-ブラウザで `http://${node_b}:3000` を開き、最初のアカウントを管理者として登録します。管理者設定の OpenAI API 接続で Node A の vLLM モデルが表示され、直接選択できることを確認します。
+ブラウザで `https://${node_b}/` を開き(自己署名の場合は警告を承認)、最初のアカウントを管理者として登録します。管理者設定の OpenAI API 接続で Node A の vLLM モデルが表示され、直接選択できることを確認します。
 
 `Workspace > Knowledge` で文書をアップロードし、チャットでその Knowledge を参照して質問します。回答と出典が表示されれば、内蔵 RAG の取り込み・検索・生成経路を確認できています。
 
@@ -113,19 +116,22 @@ docker compose ps
 ```bash
 cd deploy/plan2
 
-# 1) ビルドと起動(TEI は初回起動時にモデルを自動ダウンロード)
+# 1) Nginx の TLS 証明書を配置(検証用は自己署名。本番は社内 CA / Let's Encrypt)
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout nginx/certs/server.key -out nginx/certs/server.crt -subj "/CN=${node_b_hostname}"
+
+# 2) ビルドと起動(TEI は初回起動時にモデルを自動ダウンロード)
 docker compose up -d --build
 
-# 2) 各サービスの起動確認
+# 3) 各サービスの起動確認
 curl http://localhost:8081/health        # tei-embed  -> 200(モデル DL 完了まで数分待つ)
 curl http://localhost:8082/health        # tei-rerank -> 200
 curl http://localhost:6333/readyz        # qdrant     -> 200
 curl http://localhost:8000/health        # rag-api    -> {"status":"ok"}
 
-# 3) 取り込み
+# 4) 取り込み
 docker compose --profile ingest run --rm ingest
 
-# 4) RAG API の動作確認(Open WebUI を通さず直接)
+# 5) RAG API の動作確認(Open WebUI を通さず直接)
 set -a && source .env && set +a
 curl http://localhost:8000/v1/chat/completions \
   -H "Authorization: Bearer ${EVAL_TOKEN}" \
@@ -133,7 +139,7 @@ curl http://localhost:8000/v1/chat/completions \
   -d '{"model":"knowledge-rag","messages":[{"role":"user","content":"(文書に関する質問)"}]}'
 ```
 
-**Open WebUI の初期設定**: `http://${node_b}:3000` を開き、最初に作成したアカウントが管理者になります。`OPENAI_API_BASE_URL` で rag-api を接続済みのため、モデル一覧に `knowledge-rag`(`.env` の `RAG_MODEL_NAME`)が表示されればそれを選んで会話を開始できます。
+**Open WebUI の初期設定**: `https://${node_b}/` を開き(自己署名の場合は警告を承認)、最初に作成したアカウントが管理者になります。`OPENAI_API_BASE_URL` で rag-api を接続済みのため、モデル一覧に `knowledge-rag`(`.env` の `RAG_MODEL_NAME`)が表示されればそれを選んで会話を開始できます。
 
 ## 3. 案3 の構築(Nginx + OpenSearch ハイブリッド + PostgreSQL)
 
@@ -250,7 +256,7 @@ ssh -N -L 8080:127.0.0.1:8180 ragsys-app-00${n}
 
 `.env` の OIDC ブロックを有効化し、`OPENID_PROVIDER_URL=http://keycloak:8080/realms/rag/.well-known/openid-configuration`、client ID `open-webui`、検証用固定 secret を設定して Open WebUI を再作成します。alice/bob/carol/eva でログインし、issuer と `groups` claim の同期を確認します。
 
-案3の HTTPS 公開名で検証する場合は、Keycloak 起動前に `deploy/keycloak/realm-rag.json` の `redirectUris` へ `https://${node_b_hostname}/oauth/oidc/callback` を明示追加します。Keycloak はホスト位置の wildcard をサポートしません。
+案1b・案2・案3の HTTPS 公開名で検証する場合は、Keycloak 起動前に `deploy/keycloak/realm-rag.json` の `redirectUris` へ `https://${node_b_hostname}/oauth/oidc/callback` を明示追加します。Keycloak はホスト位置の wildcard をサポートしません。
 
 案3の PostgreSQL initdb script は空の `pg-data` を初期化する初回だけ keycloak_app role/DB を作成します。既存 volume には同等の SQL を別途適用します。本番は issuer/client/secret/redirect URI を組織 IdP と安定した HTTPS 名へ差し替え、検証用の secret、ユーザー、初期パスワードは移行しません。
 

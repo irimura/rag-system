@@ -1,6 +1,6 @@
 # セッションコンテキスト(コーディングエージェント向け引き継ぎ)
 
-最終更新: 2026-07-15(§10 OIDC 認証・グループ認可の実装方針を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
+最終更新: 2026-07-16(§11 案1b・案2の NGINX/TLS 統一を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
 
 このリポジトリは **vLLM + LangChain による日本語 RAG システムの設計・構築・評価ドキュメント一式**である。コードよりドキュメントが主体で、`deploy/` のアプリコードはサンプル実装(構文検証済み・実ビルド/実行は未実施)。本ファイルは過去セッションの決定事項・規約・注意点の引き継ぎであり、**ここに書かれた決定を無断で覆さないこと**(変更するときはユーザーに確認する)。
 
@@ -136,3 +136,11 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - ローカル所属は案2/3 の `auth/groups.json`、文書所属は `documents/<group>/...` の第1階層を正とする。直下ファイルと未知/空所属は fail closed
 - 案3の暫定方式はグループ別 OpenSearch internal user + DLS。Token Exchange は将来パス
 - 評価経路は `EVAL_TOKEN` を `secrets.compare_digest` で検証し、全グループ principal として TC11 の越境試験に使用する
+
+## 11. 案1b・案2の NGINX/TLS 統一(2026-07-16)
+
+- 案1b・案2も案3と同じ `nginx:1.30.3` を Open WebUI 前段へ置き、外部公開は 80/443(TLS 終端)に統一した。案1(Chainlit)は変更しない
+- Open WebUI のホスト 3000 は `127.0.0.1:3000:8080` のデバッグ用途だけとし、NGINX はコンテナ内 `open-webui:8080` へプロキシする
+- `deploy/plan1b/nginx/conf.d/rag.conf` と `deploy/plan2/nginx/conf.d/rag.conf` は案3と同一。証明書生成物は Git 管理せず `.gitkeep` だけ保持する
+- NGINX の常駐オーバーヘッドは軽微なため、案1b・案2の推奨 Instance Type は据え置く
+- 検証環境に Docker CLI がないため、`docker compose config`、自己署名証明書での起動、HTTP 301 / HTTPS 200、3000 の loopback bind、ブラウザでの SSE/WebSocket・アップロードは未検証。NGINX 設定3案の SHA-256 一致と静的検証のみ実施した

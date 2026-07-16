@@ -77,7 +77,7 @@ flowchart LR
 | **キーワード検索(Okapi BM25)** | 字面一致に強い全文検索。ハイブリッド検索の片翼 | rank_bm25(`BM25Retriever`・in-memory)/ OpenSearch(Lucene BM25 + kuromoji)/ Milvus 2.5+ 内蔵 BM25 |
 | **Retriever** | クエリに対する関連文書の取得戦略 | LangChain Retriever(similarity / MMR / BM25 / Hybrid / Multi-Query 等) |
 | **Reranker** | 取得結果の再順位付けによる精度向上 | `BAAI/bge-reranker-v2-m3`(CrossEncoder / TEI rerank) |
-| **リバースプロキシ** | TLS 終端・ルーティング(案3) | Nginx / Caddy |
+| **リバースプロキシ** | TLS 終端・ルーティング(案1b/2/3) | Nginx / Caddy |
 | **メタデータ DB** | 会話履歴・ユーザー管理(案3) | PostgreSQL |
 
 > 各要素の詳細と精度向上のポイントは [docs/rag-components.md](docs/rag-components.md) を参照。
@@ -137,7 +137,7 @@ flowchart LR
 |---|---|---|---|---|
 | 詳細 | [plan1-minimal.md](docs/plan1-minimal.md) | [plan1b-openwebui.md](docs/plan1b-openwebui.md) | [plan2-standard.md](docs/plan2-standard.md) | [plan3-hybrid.md](docs/plan3-hybrid.md) |
 | ノード構成 | Node A + Node B | Node A + Node B | Node A + Node B | Node A + Node B(将来 DB を Node C に分離可) |
-| WebUI | Chainlit(API 同居) | Open WebUI | Open WebUI | Open WebUI + Nginx(TLS) |
+| WebUI | Chainlit(API 同居) | Open WebUI + Nginx(TLS) | Open WebUI + Nginx(TLS) | Open WebUI + Nginx(TLS) |
 | RAG API | Chainlit プロセス内 | Open WebUI 内蔵 RAG(コード不要) | FastAPI + LangChain | FastAPI + LangGraph |
 | 検索 DB | Chroma(組み込み) | 内蔵 Chroma | Qdrant | OpenSearch(Hybrid)or Milvus |
 | Embedding | プロセス内(sentence-transformers) | Open WebUI 内蔵(CPU) | TEI(専用コンテナ) | TEI(専用コンテナ) |

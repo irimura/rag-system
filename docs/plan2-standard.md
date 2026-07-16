@@ -13,7 +13,8 @@ flowchart TB
     U(["ユーザー<br/>ブラウザ"])
 
     subgraph nodeB["Node B: アプリ+データノード(Docker Compose / RAM 16GB〜)"]
-        OWUI["Open WebUI :3000<br/>認証・会話履歴(SQLite 内蔵)<br/>チャット画面"]
+        NGINX["Nginx :80/:443<br/>TLS 終端"]
+        OWUI["Open WebUI :8080<br/>ホスト :3000 は内部/デバッグ用<br/>認証・会話履歴(SQLite 内蔵)<br/>チャット画面"]
 
         subgraph ragapi["RAG API コンテナ :8000"]
             API["FastAPI"]
@@ -25,6 +26,7 @@ flowchart TB
         TEI_E["TEI(embed / CPU):8081<br/>BAAI/bge-m3"]
         TEI_R["TEI(rerank / CPU):8082<br/>bge-reranker-v2-m3"]
 
+        NGINX --> OWUI
         OWUI -->|"OpenAI 互換<br/>chat/completions"| API
         LC -->|"embed"| TEI_E
         LC -->|"検索 (k=20)"| QD
@@ -36,7 +38,7 @@ flowchart TB
     end
 
     LC -->|"生成(HTTP)"| VLLM
-    U -->|"HTTP :3000"| OWUI
+    U -->|"HTTPS :443"| NGINX
 
     subgraph ingestflow["取り込み(バッチ / cron)"]
         ING["ingest ジョブ<br/>(Loader → Splitter)"]
@@ -63,9 +65,18 @@ Open WebUI のログインだけでは外部 rag-api の検索は制限されま
 
 ```yaml
 services:
+  nginx:
+    image: nginx:1.30.3
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on: [open-webui]
+    restart: unless-stopped
+
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.9.4
-    ports: ["3000:8080"]
+    ports: ["127.0.0.1:3000:8080"]
     volumes: ["open-webui-data:/app/backend/data"]
     environment:
       # RAG API を OpenAI 互換エンドポイントとして登録
