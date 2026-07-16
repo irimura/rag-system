@@ -4,7 +4,7 @@
 # 外部公開は nginx(80/443)のみ。他は 127.0.0.1 バインド
 services:
   nginx:
-    image: nginx:1.30.3
+    image: nginx:1.30.4
     ports:
       - "80:80"
       - "443:443"

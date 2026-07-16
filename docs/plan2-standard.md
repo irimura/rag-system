@@ -66,7 +66,7 @@ Open WebUI のログインだけでは外部 rag-api の検索は制限されま
 ```yaml
 services:
   nginx:
-    image: nginx:1.30.3
+    image: nginx:1.30.4
     ports: ["80:80", "443:443"]
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
