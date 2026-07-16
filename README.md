@@ -24,6 +24,7 @@
 | [docs/rag-components.md](docs/rag-components.md) | RAG 精度向上のための構成要素解説(Loader / Transformer / Embedding / Vector DB / Retriever / Rerank) |
 | [docs/evaluation-spec.md](docs/evaluation-spec.md) | RAG 精度評価のテスト仕様書(指標定義・テスト観点 TC01〜TC10・実行手順・合否基準) |
 | [docs/test-data.md](docs/test-data.md) | テストデータ集(Vector DB 投入用の公開コーパス・評価用 QA データセットへのリンク) |
+| [docs/corpus/](docs/corpus/README.md) | 段階別・デプロイ案別のコーパス取得、前処理、配置、投入、検収手順 |
 | [eval/golden_dataset.sample.jsonl](eval/golden_dataset.sample.jsonl) | ゴールデンデータセットのサンプル(テスト観点別 10 ケース) |
 | [test/](test/) | 評価の実行手順書(レベル1/レベル2 の手順 + 実行スクリプト、テスト観点別のケース手順書) |
 | [docs/node-specs.md](docs/node-specs.md) | ノードスペック選定(AWS EC2 の Instance Type / AMI / EBS / セキュリティグループ / 月額試算) |

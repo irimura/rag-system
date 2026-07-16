@@ -52,6 +52,8 @@ vim .env    # 最低限 VLLM_BASE_URL / VLLM_API_KEY(案1/2/3 は VLLM_MODEL も
 
 取り込みたい文書(PDF / Markdown / テキスト)を `documents/` に配置します。
 
+段階別コーパスの取得・前処理・固定グループへの配置・全量再取り込み・検収は [コーパス取り込み手順](corpus/README.md) を参照してください。案1bの UI/API アップロード手順も同書にまとめています。
+
 案1b/2/3 では `.env` のシークレットをすべて別々に `openssl rand -hex 32` で生成します。案2/3 は `FORWARD_USER_INFO_HEADER_JWT_SECRET` と `EVAL_TOKEN`、案3はさらに `OS_GROUP_USER_SECRET` と `KEYCLOAK_DB_PASSWORD` が必要です。
 
 案2/3 では次を実行します。案1bのグループは Open WebUI の Admin Panel で管理するため `groups.json` は使用しません。
