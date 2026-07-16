@@ -16,7 +16,12 @@ ensure_dir "${RAW_DIR}/livedoor"
 echo "注意: livedoor ニュースコーパスは CC BY-ND 2.1 JP(改変禁止)・社内評価限定です。"
 echo "本文を書き換えず、要約を保存せず、検索内部のチャンクを含む成果物を再配布しないでください。"
 
-archive="${RAW_DIR}/livedoor/ldcc-20140209.tar.gz"
+archive_name="$(basename "${LIVEDOOR_URL%%\?*}")"
+if [[ -z "${archive_name}" || "${archive_name}" == "." || "${archive_name}" == "/" ]]; then
+  echo "LIVEDOOR_URL から保存ファイル名を判定できません: ${LIVEDOOR_URL}" >&2
+  exit 1
+fi
+archive="${RAW_DIR}/livedoor/${archive_name}"
 download_file "${LIVEDOOR_URL}" "${archive}"
 
 if [[ -d "${RAW_DIR}/livedoor/text" ]] && [[ "$(file_count "${RAW_DIR}/livedoor/text" '*.txt')" -gt 0 ]]; then

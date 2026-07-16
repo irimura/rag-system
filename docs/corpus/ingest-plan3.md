@@ -53,7 +53,7 @@ docker compose --profile ingest run --rm ingest
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh load 3 symlink
+bash scripts/corpus/prepare_stage.sh load 3 copy
 cd deploy/plan3
 docker compose --profile ingest run --rm ingest
 ```

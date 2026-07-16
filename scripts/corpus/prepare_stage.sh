@@ -48,9 +48,20 @@ if [[ "${stage}" == "load" ]]; then
   sources+=("${PROCESSED_DIR}/wikipedia")
 fi
 
+find_corpus_files() {
+  local source_dir="${1}"
+  shift
+  find "${source_dir}" -type f \
+    ! -name 'SOURCE.md' \
+    ! -name 'LICENSE.txt' \
+    ! -name 'CHANGES.txt' \
+    ! -name 'README.txt' \
+    "${@}"
+}
+
 for index in "${!groups[@]}"; do
   source_dir="${sources[${index}]}"
-  if [[ ! -d "${source_dir}" ]] || [[ "$(find "${source_dir}" -type f -print -quit)" == "" ]]; then
+  if [[ ! -d "${source_dir}" ]] || [[ "$(find_corpus_files "${source_dir}" -print -quit)" == "" ]]; then
     echo "必要なコーパスがありません: group=${groups[${index}]} source=${source_dir}" >&2
     echo "先に scripts/corpus/README.md の取得・前処理手順を完了してください。" >&2
     exit 1
@@ -60,12 +71,23 @@ done
 copy_tree() {
   local source_dir="${1}"
   local target_dir="${2}"
-  cp -a -v "${source_dir}/." "${target_dir}/"
+  local relative
+  local source_file
+  local target_file
+  while IFS= read -r -d '' source_file; do
+    relative="${source_file#"${source_dir}/"}"
+    target_file="${target_dir}/${relative}"
+    ensure_dir "$(dirname "${target_file}")"
+    cp -a -v "${source_file}" "${target_file}"
+  done < <(find_corpus_files "${source_dir}" -print0)
 }
 
 link_tree() {
   local source_dir="${1}"
   local target_dir="${2}"
+  local relative
+  local source_file
+  local target_file
   while IFS= read -r -d '' source_file; do
     relative="${source_file#"${source_dir}/"}"
     target_file="${target_dir}/${relative}"
@@ -83,11 +105,15 @@ link_tree() {
       exit 1
     fi
     ln -s -v "${source_file}" "${target_file}"
-  done < <(find "${source_dir}" -type f -print0)
+  done < <(find_corpus_files "${source_dir}" -print0)
 }
 
 echo "段階 ${stage} / 案 ${plan} / 配置方式 ${method}"
 echo "既存の documents/ は削除せず、必要なコーパスを累積配置します。"
+if [[ "${method}" == "symlink" ]]; then
+  echo "注意: 絶対シンボリックリンクを作成します。Docker ingest では ${CORPUS_DIR} を同じ絶対パスへ read-only 追加マウントしない限りリンク先を参照できません。" >&2
+  echo "標準 compose のまま実行する場合は copy を使用してください。" >&2
+fi
 
 for index in "${!groups[@]}"; do
   group="${groups[${index}]}"

@@ -40,7 +40,7 @@ docker compose restart chainlit-app
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh load 1 symlink
+bash scripts/corpus/prepare_stage.sh load 1 copy
 cd deploy/plan1
 docker compose --profile ingest run --rm ingest
 docker compose restart chainlit-app

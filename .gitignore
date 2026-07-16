@@ -18,3 +18,4 @@ deploy/plan3/rag-api/certs/root-ca.pem
 __pycache__/
 *.pyc
 .venv/
+.venv-corpus/

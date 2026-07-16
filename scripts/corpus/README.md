@@ -102,12 +102,14 @@ Wikipediaの抽出テキストには記事名、元URL、CC BY-SA 4.0を記録�
 
 ## 5. 案と配置方式の切り替え
 
-`prepare_stage.sh` の第2引数は `1` / `2` / `3`、第3引数は `copy` / `symlink` です。既定はコピーです。
+`prepare_stage.sh` の第2引数は `1` / `2` / `3`、第3引数は `copy` / `symlink` です。既定はコピーです。`SOURCE.md` / `LICENSE.txt` / `CHANGES.txt` / `README.txt` は出典・ライセンス確認用として raw側に保持しますが、検索コーパスには配置しません。
 
 ```bash
 bash scripts/corpus/prepare_stage.sh accuracy 1 copy
-bash scripts/corpus/prepare_stage.sh accuracy 2 symlink
+bash scripts/corpus/prepare_stage.sh accuracy 2 copy
 bash scripts/corpus/prepare_stage.sh load 3 copy
 ```
 
 配置先のグループ名は `laws` / `whitepaper` / `ipa` / `livedoor` / `wikipedia` に固定します。`documents/` 直下には配置しません。各段階で既存ファイルを削除せず累積配置し、その後に対象案の ingest を実行してコレクション/インデックスを全量再構築します。
+
+`symlink` はディスク節約用の任意オプションです。`${CORPUS_DIR}` への絶対リンクを作成するため、Docker ingestで使用するには対象案の ingestサービスへ `${CORPUS_DIR}:${CORPUS_DIR}:ro` を追加マウントし、ホストとコンテナで同じ絶対パスを見せる必要があります。具体的な環境変数の読み込みと compose設定は [事前準備](../../docs/corpus/prerequisites.md) §1を参照してください。標準 compose のまま実行する場合は `copy` を使用してください。

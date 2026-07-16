@@ -125,7 +125,7 @@ bash scripts/corpus/download_livedoor.sh
 
 ### 手動取得の代替手順
 
-ロンウイットの配布ページから通常テキスト版 `ldcc-20140209.tar.gz` を取得し、`${CORPUS_DIR}/raw/livedoor/` へ配置して展開します。展開後のカテゴリ別 `LICENSE.txt` を削除しません。
+ロンウイットの配布ページから通常テキスト版 `ldcc-20140209.tar.gz` を取得し、`${CORPUS_DIR}/raw/livedoor/` へ配置して展開します。展開後のカテゴリ別 `LICENSE.txt` は raw側に保持しますが、`prepare_stage.sh` は `LICENSE.txt` / `CHANGES.txt` / `README.txt` を検索コーパスへ配置しません。
 
 ```bash
 cp -v ${downloaded_archive} ${CORPUS_DIR}/raw/livedoor/ldcc-20140209.tar.gz

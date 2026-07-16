@@ -41,7 +41,7 @@ docker compose --profile ingest run --rm ingest
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh load 2 symlink
+bash scripts/corpus/prepare_stage.sh load 2 copy
 cd deploy/plan2
 docker compose --profile ingest run --rm ingest
 ```
@@ -83,4 +83,4 @@ docker compose logs --tail 200 rag-api
 | 途中失敗後に件数が少ない | collectionは再作成済みの可能性がある。原因修正後、累積 `documents/` を確認して ingestを最初から再実行 |
 | 403または0件 | `groups.json` の固定グループ、利用者所属、`documents/<group>/` の第1階層を確認 |
 | TEIが遅い/停止 | CPU/RAM、モデルキャッシュ、コンテナログを確認し、Wikipedia記事数を下げて再計測 |
-| ディスク不足 | symlink配置へ切り替え、EBSを拡張し、raw/processed/Qdrantのピークを再見積もり |
+| ディスク不足 | EBSを拡張し、raw/processed/`documents/`/Qdrantのピークを再見積もり。symlinkを使う場合は [事前準備](prerequisites.md) §1の追加マウント条件を満たす |

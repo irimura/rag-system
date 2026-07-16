@@ -13,7 +13,23 @@
 | 負荷・規模試験(部分ダンプ) | 100GB以上 | 圧縮ダンプ、抽出テキスト、`documents/`、Vector DB、WikiExtractor一時領域 |
 | 負荷・規模試験(全件) | 300〜500GB以上 | jawiki全件の raw/processed/index と再構築時のピーク。実施前に最新サイズから再見積もり |
 
-コピー配置は processed と `documents/` の両方に同じ本文を保持します。容量を抑える場合は `prepare_stage.sh` の `symlink` を使用できますが、`CORPUS_DIR` を移動・削除するとリンクが切れるため、EBS上の固定パスに置きます。
+標準手順はコピー配置です。processed と `documents/` の両方に同じ本文を保持する前提で容量を確保してください。
+
+`symlink` はディスク節約用の任意オプションです。作成されるリンクは `${CORPUS_DIR}` 配下への絶対リンクのため、標準 compose の `./documents:/data/documents:ro` だけでは ingestコンテナから参照できません。使用する場合は `${CORPUS_DIR}` を移動しない固定パスに置き、`docker compose` を実行するシェルで次を実行します。
+
+```bash
+set -a && source ${repo_dir}/scripts/corpus/corpus.env && set +a
+```
+
+さらに、対象案の `docker-compose.yml` の ingestサービスへ次の2行目を追加し、ホストとコンテナで同じ絶対パスをマウントします。
+
+```yaml
+volumes:
+  - ./documents:/data/documents:ro
+  - ${CORPUS_DIR}:${CORPUS_DIR}:ro
+```
+
+この追加マウントを行わない場合は必ず `copy` を使用します。
 
 ```bash
 df -h ${repo_dir}
