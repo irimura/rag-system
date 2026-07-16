@@ -241,7 +241,7 @@ curl --cacert rag-api/certs/root-ca.pem --resolve node-0.example.com:9200:127.0.
 
 ## 3.2 Keycloak(検証用 IdP・任意)
 
-既定はローカル認証だけで完結します。OIDC 検証時だけ profile `idp` を起動します。
+既定はローカル認証だけで完結します。外部 IdP の開通と §3.3 のバックチャネル経路整備が完了する前に、OIDC フロー全体を先行検証するときだけ profile `idp` を起動します。本番の外部 IdP 利用時は起動しません。
 
 ```bash
 cd deploy/plan${n}
@@ -260,6 +260,39 @@ ssh -N -L 8080:127.0.0.1:8180 ragsys-app-00${n}
 
 案3の PostgreSQL initdb script は空の `pg-data` を初期化する初回だけ keycloak_app role/DB を作成します。既存 volume には同等の SQL を別途適用します。本番は issuer/client/secret/redirect URI を組織 IdP と安定した HTTPS 名へ差し替え、検証用の secret、ユーザー、初期パスワードは移行しません。
 
+## 3.3 外部 IdP へ接続する場合
+
+先に [AWS 構築手順](aws-provisioning.md) §2.3 の NAT Gateway 常設または VPC ピアリングで、Node B から IdP の discovery/token endpoint へ HTTPS 接続できるようにします。IdP には client を作成し、`redirect_uri` として `https://${node_b_hostname}/oauth/oidc/callback` を登録します。
+
+`redirect_uri` のホスト名はブラウザから解決・到達できればよく、パブリック DNS での解決は技術的には不要です。ただし、IdP が公開 FQDN や組織ドメインの所有権検証を要求する場合があるため、申請時に確認します。Nginx の証明書は公開 CA + DNS-01、または利用端末へ CA を配布した社内 CA を本番候補とします。詳細は [OIDC 導入設計](auth-oidc.md) §5.1 を参照してください。
+
+`.env` の OIDC ブロックを本番 IdP の発行値で設定します。`IDP_HOST` には discovery endpoint のホスト名、client ID/secret には IdP から払い出された値を設定します。
+
+```dotenv
+IDP_HOST=idp.example.com
+OIDC_CLIENT_ID=replace-with-issued-client-id
+OIDC_CLIENT_SECRET=replace-with-issued-client-secret
+ENABLE_OAUTH_SIGNUP=true
+OAUTH_CLIENT_ID=${OIDC_CLIENT_ID}
+OAUTH_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+OPENID_PROVIDER_URL=https://${IDP_HOST}/.well-known/openid-configuration
+OAUTH_PROVIDER_NAME=Corporate-IdP
+OAUTH_MERGE_ACCOUNTS_BY_EMAIL=true
+ENABLE_OAUTH_GROUP_MANAGEMENT=true
+ENABLE_OAUTH_GROUP_CREATION=true
+OAUTH_GROUP_CLAIM=groups
+```
+
+OAuth 設定は PersistentConfig のため、初回起動後に変更する場合は Admin UI/DB の保存値も確認して Open WebUI を再作成します。別 VPC の IdP が社内 CA 証明書を使う場合は、CA バンドルをコンテナへ読み取り専用で配置し、`SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` 等を設定してから確認します。
+
+Node B 上で Open WebUI コンテナから discovery endpoint へ到達できることを確認します。HTTP 200 と期待する issuer が表示されることを確認してください。
+
+```bash
+docker compose exec open-webui python -c "import json, os, urllib.request; url=os.environ['OPENID_PROVIDER_URL']; data=json.load(urllib.request.urlopen(url, timeout=10)); print(data['issuer'])"
+```
+
+次にブラウザで Nginx の HTTPS 公開名を開き、外部 IdP でログインします。Open WebUI にセッションが作成され、`groups` claim が管理画面のグループへ同期されることを確認します。経路整備前に同じ機能を確認する場合は §3.2 の検証用 Keycloak を使用します。
+
 ## 4. 運用
 
 | 作業 | コマンド |
@@ -274,6 +307,7 @@ ssh -N -L 8080:127.0.0.1:8180 ragsys-app-00${n}
 
 | 症状 | 原因と対処 |
 |---|---|
+| OIDC ログインで discovery/token 取得に失敗 | 既定の隔離構成では Open WebUI から外部 IdP へ到達できない。`docker compose exec open-webui` で §3.3 の discovery 確認を実行し、[AWS 構築手順](aws-provisioning.md) §2.3 の NAT/ピアリング、DNS、443 egress、CA バンドルを確認 |
 | rag-api が 401 | EVAL_TOKEN または Open WebUI v0.9.6 以降の署名 JWT がない/不正。JWT secret が両サービスで同一か確認 |
 | rag-api が 403 | email が groups.json にない、所属が空、または要求 group が所属外。fail closed のため設定を修正する |
 | rag-api が 503「コレクション/インデックスがありません」 | ingest 未実行。§1〜3 の取り込み手順を実行する |

@@ -20,6 +20,7 @@ AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化す�
 
 - **単一サブネット**: 5 ノードすべてを 1 つのプライベートサブネット(192.168.0.0/26)に収容する
 - **NAT Gateway は必要時のみ**: 定常運用ではインターネット不要(モデル・イメージは AMI/EBS に取得済み、利用者は VPN 等の閉域から WebUI へ)。パッケージ取得やモデルダウンロードが必要なセットアップ時だけ NAT を作成し、AMI 化後に削除する
+  - **外部 IdP の OIDC は例外**: The Internet 上の IdP には NAT を常設し、別 VPC 上の IdP には VPC ピアリングを使う(§2.3)。検証用 Keycloak だけを使う場合は既定どおり削除する
   - NAT Gateway は IGW へ抜ける**専用のパブリックサブネット**に置く必要があり、ワークロード用サブネットには同居できない。そのため NAT 用の一時サブネット(192.168.0.64/28)を NAT と同じライフサイクルで作成・削除する(ワークロードは常に単一サブネットのまま)
   - **IGW も NAT と同時に作成・削除する**: NAT Gateway 単体ではインターネットに到達できず、出口として IGW が必須(経路: Instance → NAT GW → IGW → Internet)。IGW 自体は無料だが、定常運用時にインターネット経路を一切残さない隔離のため、IGW も §2 で NAT と同ライフサイクルにする。**EICE は IGW を経由しない**ため、IGW/NAT が無い定常運用でもシェル接続は維持される
 - **シェルアクセスは EC2 Instance Connect Endpoint(EICE)**: プライベート運用のためインバウンド SSH を外部へ開けず、VPC 内の EICE 経由で接続する。パブリック IP・踏み台・NAT を必要とせず、**NAT 削除後の隔離状態でも接続できる**(EICE 自体は無料。§1.4)
@@ -411,7 +412,73 @@ aws ec2 detach-internet-gateway --internet-gateway-id ${igw_id} --vpc-id ${vpc_i
 aws ec2 delete-internet-gateway --internet-gateway-id ${igw_id}
 ```
 
-> NAT Gateway は稼働時間と処理データ量で課金される。使わない間は必ず削除する。ID を保持していない新しいシェルで削除する場合は §5.1 のタグ検索で `nat_id` 等を再取得する。
+> NAT Gateway は稼働時間と処理データ量で課金されます。§2.3 経路Aとして外部 IdP に常設する場合を除き、使わない間は必ず削除します。ID を保持していない新しいシェルで削除する場合は §5.1 のタグ検索で `nat_id` 等を再取得します。
+
+### 2.3 外部 IdP へのバックチャネル経路(OIDC 利用時・任意)
+
+本番の外部 IdP を使う場合、Open WebUI から discovery/token endpoint へ到達する経路を次のどちらかで整備します。将来 OpenSearch の OIDC auth domain を有効化する場合も、JWKS endpoint へ同じ経路が必要です。
+
+#### 経路A: NAT Gateway を常設する(The Internet 上の IdP)
+
+§2.1 を実行して `0.0.0.0/0 → NAT Gateway` の route、NAT 専用 subnet、EIP、IGW を作成し、**§2.2 の削除を実施せず維持します**。これは「定常運用はインターネット経路ゼロ」という既定方針の例外です。NAT Gateway は東京リージョンで約 `$0.062/h`、730h で月約 `$45.26` に処理データ料金が加わります。
+
+セットアップ完了後に EC2 用 SG の既定 egress を削除し、VPC 内通信と IdP の HTTPS だけを許可する例です。Security Group はドメイン名を指定できないため、`${idp_cidr}` には IdP が公開する固定 IP/CIDR を設定します。
+
+```bash
+idp_cidr=203.0.113.10/32
+aws ec2 revoke-security-group-egress --group-id ${sg_id} --protocol -1 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-egress --group-id ${sg_id} --protocol -1 --cidr ${vpc_cidr}
+aws ec2 authorize-security-group-egress --group-id ${sg_id} --protocol tcp --port 443 --cidr ${idp_cidr}
+```
+
+IdP の IP が固定されず CIDR を保守できない場合は `${idp_cidr}=0.0.0.0/0` として 443/tcp に限定しますが、任意の外部 HTTPS 宛先へ接続可能になるリスクが残ります。宛先ドメインを厳密に制限する必要がある場合は、許可ドメイン限定のフォワードプロキシを経由させます。SG egress を変更する前後に Node A、IdP、必要な AWS endpoint への通信要件を確認してください。
+
+#### 経路B: VPC ピアリングを使う(別 VPC 上の IdP)
+
+Internet を経由しないため既定の隔離方針との整合が最も高い方式です。CIDR が重複していないことを確認し、IdP 側のアカウント/リージョン情報と route table、SG を設定します。別アカウントの場合、承認以降の IdP 側コマンドは `${peer_profile}` の認証情報で実行します。
+
+```bash
+peer_owner_id=123456789012
+peer_region=ap-northeast-1
+peer_profile=idp-account
+peer_vpc_id=vpc-0123456789abcdef0
+peer_vpc_cidr=10.20.0.0/16
+peer_rtb_id=rtb-0123456789abcdef0
+idp_sg_id=sg-0123456789abcdef0
+```
+
+1. ピアリング接続を作成し、IdP 側で承認します。
+
+```bash
+pcx_id=$(aws ec2 create-vpc-peering-connection --vpc-id ${vpc_id} --peer-vpc-id ${peer_vpc_id} --peer-owner-id ${peer_owner_id} --peer-region ${peer_region} --tag-specifications "ResourceType=vpc-peering-connection,Tags=[{Key=Project,Value=${project}},{Key=Name,Value=${project}-idp-peering}]" --query 'VpcPeeringConnection.VpcPeeringConnectionId' --output text)
+aws --profile ${peer_profile} --region ${peer_region} ec2 accept-vpc-peering-connection --vpc-peering-connection-id ${pcx_id}
+aws ec2 wait vpc-peering-connection-exists --vpc-peering-connection-ids ${pcx_id}
+```
+
+2. 双方の route table に相手 CIDR の route を追加します。
+
+```bash
+aws ec2 create-route --route-table-id ${rtb_id} --destination-cidr-block ${peer_vpc_cidr} --vpc-peering-connection-id ${pcx_id}
+aws --profile ${peer_profile} --region ${peer_region} ec2 create-route --route-table-id ${peer_rtb_id} --destination-cidr-block ${vpc_cidr} --vpc-peering-connection-id ${pcx_id}
+```
+
+3. IdP 側 SG で Node B subnet からの 443/tcp を許可します。Node B 側の egress を制限済みなら、`${peer_vpc_cidr}` の 443/tcp も許可します。
+
+```bash
+aws --profile ${peer_profile} --region ${peer_region} ec2 authorize-security-group-ingress --group-id ${idp_sg_id} --protocol tcp --port 443 --cidr ${subnet_cidr}
+aws ec2 authorize-security-group-egress --group-id ${sg_id} --protocol tcp --port 443 --cidr ${peer_vpc_cidr}
+```
+
+4. DNS support を有効にし、必要ならピアリング越しの DNS 解決を許可します。
+
+```bash
+aws ec2 modify-vpc-attribute --vpc-id ${vpc_id} --enable-dns-support Value=true
+aws --profile ${peer_profile} --region ${peer_region} ec2 modify-vpc-attribute --vpc-id ${peer_vpc_id} --enable-dns-support Value=true
+aws ec2 modify-vpc-peering-connection-options --vpc-peering-connection-id ${pcx_id} --requester-peering-connection-options AllowDnsResolutionFromRemoteVpc=true
+aws --profile ${peer_profile} --region ${peer_region} ec2 modify-vpc-peering-connection-options --vpc-peering-connection-id ${pcx_id} --accepter-peering-connection-options AllowDnsResolutionFromRemoteVpc=true
+```
+
+IdP の private 名は Route 53 Private Hosted Zone を双方から参照できるよう関連付けるか、固定 IP を Node B の `/etc/hosts` に登録します。本リポジトリは PHZ 不採用方針のため、少数の固定 IdP endpoint では hosts を代替とします。接続を廃止するときは双方の route を削除してから `delete-vpc-peering-connection` を実行します。
 
 ---
 
@@ -549,8 +616,8 @@ flowchart LR
     N["1. ネットワーク+SG+EC2+EICE+自動停止 作成<br/>(§1)"] --> NAT1["2. NAT 作成<br/>(§2.1)"]
     NAT1 --> S["3. EICE 接続しセットアップ<br/>(deployment-guide.md)"]
     S --> AMI["4. AMI 化<br/>(§3)"]
-    AMI --> NAT2["5. NAT 削除<br/>(§2.2)"]
-    NAT2 --> RUN["6. 定常運用<br/>(隔離・保守は EICE で随時)"]
+    AMI --> NAT2["5. 経路を選択<br/>Keycloak/ピアリング: NAT 削除<br/>Internet IdP: NAT 維持"]
+    NAT2 --> RUN["6. 定常運用<br/>隔離または OIDC 例外"]
     RUN -.->|"ダウンロードを伴う保守時のみ"| NAT1
     RUN -.->|"タイプ変更"| CH["AMI から再作成<br/>(§4)"]
 ```
@@ -559,12 +626,12 @@ flowchart LR
 2. **§2.1** NAT を作成して外向き通信を開通(パッケージ・モデル取得用)
 3. EICE で各ノードへ接続し、[deployment-guide.md](deployment-guide.md) に従いセットアップ(Docker/イメージ/モデル取得)
 4. **§3** 各ノードを AMI 化(復旧・複製用のゴールデンイメージ)
-5. **§2.2** NAT を削除(課金停止・隔離へ)
-6. 定常運用(隔離)。**シェル保守は EICE で随時可能**(NAT 不要)。パッケージ・モデルの再取得を伴う作業のときだけ §2.1 で NAT を一時復活する。Instance Type 変更は **§4**(AMI から別タイプで再作成)
+5. 検証用 Keycloak または VPC ピアリングを使う場合は **§2.2** で NAT を削除する。The Internet 上の外部 IdP を使う場合は **§2.3 経路A** として NAT/IGW を維持する
+6. 定常運用。ピアリング/Keycloak 構成は隔離を維持し、Internet IdP 構成は OIDC バックチャネルだけを例外とする。**シェル保守は EICE で随時可能**。Instance Type 変更は **§4**(AMI から別タイプで再作成)
 
 ## 付録: コスト注意
 
-- **NAT Gateway**: 稼働時間 + 処理データ課金。使い終えたら §2.2 で必ず削除する(EIP も解放)
+- **NAT Gateway**: 稼働時間 + 処理データ課金。セットアップ専用なら §2.2 で削除する(EIP も解放)。The Internet 上の外部 IdP 用に常設する場合は月約 `$45.26`/730h + 処理料を継続計上する
 - **停止 ≠ 無料**: EC2 停止中も EBS は課金される(料金試算は [node-specs.md](node-specs.md) §5〜6)
 - **AMI/スナップショット**: 世代を貯めると EBS スナップショット課金が積み上がる。不要世代は §5.3 で削除
 - インスタンスタイプの単価・月額は [node-specs.md](node-specs.md) を参照

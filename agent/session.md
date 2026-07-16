@@ -1,6 +1,6 @@
 # セッションコンテキスト(コーディングエージェント向け引き継ぎ)
 
-最終更新: 2026-07-16(§11 案1b・案2の NGINX/TLS 統一を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
+最終更新: 2026-07-16(§10 外部 OIDC IdP のネットワーク経路を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
 
 このリポジトリは **vLLM + LangChain による日本語 RAG システムの設計・構築・評価ドキュメント一式**である。コードよりドキュメントが主体で、`deploy/` のアプリコードはサンプル実装(構文検証済み・実ビルド/実行は未実施)。本ファイルは過去セッションの決定事項・規約・注意点の引き継ぎであり、**ここに書かれた決定を無断で覆さないこと**(変更するときはユーザーに確認する)。
 
@@ -126,7 +126,9 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 
 詳細設計は [docs/auth-oidc.md](../docs/auth-oidc.md)を正とする。デプロイコード変更は次フェーズ。
 
-- 検証用 IdP は **Keycloak**。ローカル認証で先行検証し、本番 IdP 開通後に issuer/client/audience を差し替える
+- 本番 IdP は **外部ネットワーク(The Internet / 別 VPC)** 上に置く。フロントチャネルは利用端末から直接接続し、Node B から discovery/token endpoint へのバックチャネル経路を別途整備する
+- バックチャネルは The Internet 上の IdP 向け **NAT Gateway 常設**と、別 VPC 上の IdP 向け **VPC ピアリング**を両論併記する。具体手順は `docs/aws-provisioning.md` §2.3 を正とする
+- 検証用 IdP は **Keycloak**。外部 IdP の開通・経路整備前に OIDC フロー全体をネットワーク変更なしで先行検証する専用手段として維持し、本番運用では profile `idp` を起動しない
 - Open WebUI はローカル login form と OIDC を併存させ、検証中は手動グループ、本番は IdP group claim 同期へ移行する
 - 案2/3 の rag-api は認証方式非依存の principal とグループ解決を実装し、Vector store 検索へ `group` filter を強制する。これは **N-03(rag-api 無認可)** の恒久対応方針
 - Qdrant は **単一 collection + payload filter**、OpenSearch は **単一 index + `group` DLS**。グループ別 collection/index はライフサイクル分離要件がある場合のみ

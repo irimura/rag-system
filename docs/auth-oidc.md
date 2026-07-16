@@ -73,9 +73,76 @@ email 統合は IdP が email 所有を確実に検証する場合だけ有効�
 
 ## 5. 検証用 Keycloak と本番 IdP
 
-Keycloak は Apache-2.0 で要件に適合します。compose に追加し、realm、Open WebUI/OpenSearch client、`groups` mapper、許可・拒否・複数所属ユーザーを用意します。本番では client、discovery URL、issuer/audience、group claim の写像を差し替えます。
+本番 IdP は The Internet または別 VPC の外部ネットワーク上に置く前提です。定常運用で NAT/IGW を削除する既定の隔離構成では、ブラウザが担うフロントチャネルは成立しても、Open WebUI から外部 IdP へのバックチャネルは到達できません。
 
-OIDC issuer はブラウザ、Open WebUI、OpenSearch から同じ URL に見える必要があります。SSH LocalForward 利用時も token の `iss` と discovery URL が一致するよう `KC_HOSTNAME` を明示します。コンテナ内部だけの別名は使わず、本番は同一 Nginx 配下の安定した HTTPS 名を使います。
+| 通信 | 接続元 → 接続先 | 外部 IdP 利用時の到達性 |
+|---|---|---|
+| フロントチャネル | 利用端末のブラウザ → IdP | 利用端末から直接接続します。SSH トンネルや hosts 追記は不要です |
+| フロントチャネル | 利用端末のブラウザ → Open WebUI | Nginx の 443 へ SSH LocalForward します。`redirect_uri` は `https://<公開ホスト名>/oauth/oidc/callback` です |
+| バックチャネル | Open WebUI → IdP の discovery/token endpoint | Node B から外部 IdP への経路整備が必要です |
+| バックチャネル(将来) | OpenSearch → IdP の JWKS endpoint | OIDC auth domain 導入時は同じ外向き経路が必要です |
+
+```mermaid
+flowchart LR
+    subgraph CLIENT["利用端末"]
+        BROWSER["ブラウザ"]
+        TUNNEL["SSH LocalForward<br/>Nginx 443"]
+        BROWSER -->|"WebUI / redirect_uri"| TUNNEL
+    end
+
+    subgraph NODEB["Node B"]
+        WEBUI["Open WebUI"]
+        TUNNEL --> WEBUI
+    end
+
+    subgraph EXTERNAL["外部ネットワーク"]
+        INTERNET_IDP["The Internet 上の IdP"]
+        VPC_IDP["別 VPC 上の IdP"]
+    end
+
+    BROWSER -->|"フロントチャネル<br/>直接 HTTPS"| INTERNET_IDP
+    BROWSER -->|"フロントチャネル<br/>利用者ネットワーク経由"| VPC_IDP
+    WEBUI -.->|"経路A: NAT Gateway<br/>バックチャネル HTTPS"| INTERNET_IDP
+    WEBUI -.->|"経路B: VPC ピアリング<br/>バックチャネル HTTPS"| VPC_IDP
+```
+
+バックチャネル経路は次の2方式を併記します。具体的な AWS 手順は [AWS 構築手順](aws-provisioning.md) §2.3 を参照してください。
+
+| 経路 | 対象 IdP | Internet 経由 | コスト | 隔離方針との整合 | 主な作業 |
+|---|---|---:|---|---|---|
+| A: NAT Gateway 常設 | The Internet 上 | あり | 約 `$0.062/h`(東京、月約 `$45.26`/730h) + 処理料 | 既定方針の例外。外向き 443 を恒久化 | §2.1 の NAT/IGW/既定ルートを維持し、egress を制限 |
+| B: VPC ピアリング | 別 VPC 上 | なし | NAT 時間課金なし。データ転送料に注意 | **最も高い** | 接続作成・承認、双方の route、SG、DNS |
+
+IdP の許可ドメインだけへ接続できるフォワードプロキシを組織で提供できる場合は、NAT の egress 制御を補強する選択肢になります。
+
+検証用 Keycloak は Apache-2.0 で要件に適合します。compose profile `idp` の realm、`groups` mapper、検証ユーザーを使い、外部 IdP の開通とバックチャネル経路整備が完了する前に、ログイン、`groups` claim、グループ同期をネットワーク変更なしで先行検証します。外部 IdP を使う本番運用では profile `idp` を起動せず、client、discovery URL、issuer/audience、group claim の写像を本番値へ差し替えます。
+
+### 5.1 redirect_uri の名前解決とサーバー証明書
+
+**`redirect_uri` へ接続し、Nginx のサーバー証明書を検証するのはブラウザだけです。そのため、WebUI の公開名がパブリック DNS で解決できることも、証明書が公開 CA 発行であることも技術的な必須条件ではありません。** IdP は認証後にブラウザへ 302 を返すだけで、IdP サーバー自身は `redirect_uri` へ接続しません。利用端末の hosts または社内 DNS と SSH LocalForward で解決・到達できれば成立します。
+
+ただし、IdP の client 登録ポリシーが技術要件より厳しい場合があります。申請時に次を確認します。
+
+| 確認事項 | 技術上の要件 | IdP ポリシーで追加され得る条件 |
+|---|---|---|
+| `redirect_uri` の名前解決 | ブラウザから解決・到達できること | 公開解決可能な FQDN、組織所有ドメイン、所有権検証 |
+| URI | ブラウザの URL と登録値がポートを含め完全一致すること | `localhost` / `http` の禁止、HTTPS 必須 |
+| TLS 証明書 | 利用端末のブラウザが信頼できること | 公開 CA 発行証明書に限定 |
+
+| Nginx 証明書 | 長所 | 前提・制約 | 用途 |
+|---|---|---|---|
+| 公開 CA(Let's Encrypt 等) | 利用端末への CA 配布が不要 | 組織所有のパブリックドメインが必要。隔離環境では HTTP-01 ではなく DNS-01 で TXT を登録する。サーバー公開や A レコード公開は不要 | 本番候補 |
+| 社内 CA | パブリック DNS と公開ドメイン所有が不要。閉域運用と整合 | 全利用端末が社内 CA を信頼すること。組織管理端末では配布済みの場合がある | **推奨候補** |
+| 自己署名 | 発行が容易 | ブラウザ警告または端末ごとの信頼設定が必要 | 検証限定。本番非推奨 |
+
+| 名前解決 | 解決方法 | 到達性の注意 |
+|---|---|---|
+| ブラウザ → WebUI 公開名 | 利用端末の hosts または社内 DNS | Nginx 443 への SSH LocalForward が必要 |
+| ブラウザ → Internet IdP 名 | パブリック DNS | 利用端末から IdP へ直接到達できること |
+| Node B → Internet IdP 名 | VPC の AmazonProvidedDNS | 隔離状態でも名前解決自体は可能。到達には NAT が必要 |
+| Node B → 別 VPC IdP の private 名 | Route 53 Private Hosted Zone または Node B の hosts | 本リポジトリは PHZ 不採用のため、固定 IP を運用できる場合は hosts を代替とする。到達には VPC ピアリングが必要 |
+
+バックチャネルでは Open WebUI コンテナが IdP の TLS 証明書を検証します。Internet 上の IdP が公開 CA 証明書を使う場合は通常、コンテナ標準の信頼ストアで検証できます。別 VPC の IdP が社内 CA 証明書を使う場合は、CA バンドルを Open WebUI コンテナへ読み取り専用で配置し、`SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` 等を設定します。設定名と適用範囲は採用する Open WebUI 版で確認し、証明書検証は無効化しません。
 
 ## 6. 各案の可否と規模感
 
@@ -105,6 +172,7 @@ OIDC issuer はブラウザ、Open WebUI、OpenSearch から同じ URL に見え
 | `OAUTH_GROUP_CLAIM` の誤記 | 変数名は単数形、値は `groups` |
 | PersistentConfig が env 変更を優先しない | 初回起動前に確定、または Admin UI/DB 保存値を確認 |
 | OIDC 同期がローカル所属を上書き | 切替前に照合し、同期後は IdP を正とする |
+| バックチャネル経路が未整備 | 既定の隔離構成では外部 IdP の discovery/token endpoint に届かない。NAT 常設または VPC ピアリングを先に整備 |
 | admin が ACL を迂回 | `BYPASS_ADMIN_ACCESS_CONTROL=false` を検討。ただし UI 上のアクセス抑制であり、root 相当の admin 自身に対するセキュリティ境界とはみなさない |
 | email 統合による乗っ取り | verified email を保証する IdP だけで統合 |
 | filter 付け忘れ | repository 層で強制し、空/不明は fail closed |
@@ -130,10 +198,10 @@ OIDC issuer はブラウザ、Open WebUI、OpenSearch から同じ URL に見え
 
 ## 9.2 SSH トンネル環境での OIDC 通信と redirect_uri 制約
 
-OIDC の Authorization Code フローは、SSH LocalForward を使う閉域環境でも成立します。通信は次の2系統に分かれます。
+検証用 Keycloak の Authorization Code フローは、SSH LocalForward を使う閉域環境でも成立します。通信は次の2系統に分かれます。
 
 - **フロントチャネル**: ブラウザと IdP / Open WebUI の間で、ログイン開始、認可エンドポイントへのリダイレクト、ログイン画面の表示、`redirect_uri` への復帰を行います。すべてブラウザの HTTP アクセスであるため LocalForward を通過でき、IdP のインターネット公開は不要です。
-- **バックチャネル**: Open WebUI コンテナから IdP のトークンエンドポイントへ接続し、認可 code をトークンへ交換します。Node B の Docker network 内を直接通信するため、SSH トンネルとは無関係です。
+- **バックチャネル**: Open WebUI コンテナから IdP のトークンエンドポイントへ接続し、認可 code をトークンへ交換します。SSH トンネルとは無関係です。検証用 Keycloak は Docker network 内で直接通信し、外部 IdP は §5 の NAT/ピアリング経路を使います。
 
 ```mermaid
 sequenceDiagram
@@ -194,6 +262,8 @@ flowchart LR
 ```
 
 上の2図は、検証用 Keycloak とデバッグ用の `http://localhost:3000` を使う経路です。案1b/2/3 で HTTPS 公開名を使う標準経路では、Nginx の 443 へ LocalForward し、`https://${node_b_hostname}/oauth/oidc/callback` を Keycloak の `redirectUris` へ明示追加します。詳細は [Node B 構築手順](deployment-guide.md) §3.2 を参照してください。
+
+外部 IdP の場合、ブラウザはトンネル外で IdP へ直接接続します。SSH LocalForward を通るのは WebUI(Nginx 443)へのアクセスと `redirect_uri` への復帰だけで、Open WebUI から IdP への discovery/token 通信は §5 のバックチャネル経路を使用します。
 
 issuer と `redirect_uri` はポートを含む URL の完全一致が必要です。各 LocalForward のローカルポートを変更する場合は、ブラウザから見える URL、`KC_HOSTNAME`、IdP に登録する `redirect_uri` の対応するポートも揃えて変更します。
 
