@@ -263,9 +263,76 @@ flowchart LR
 
 上の2図は、検証用 Keycloak とデバッグ用の `http://localhost:3000` を使う経路です。案1b/2/3 で HTTPS 公開名を使う標準経路では、Nginx の 443 へ LocalForward し、`https://${node_b_hostname}/oauth/oidc/callback` を Keycloak の `redirectUris` へ明示追加します。詳細は [Node B 構築手順](deployment-guide.md) §3.2 を参照してください。
 
-外部 IdP の場合、ブラウザはトンネル外で IdP へ直接接続します。SSH LocalForward を通るのは WebUI(Nginx 443)へのアクセスと `redirect_uri` への復帰だけで、Open WebUI から IdP への discovery/token 通信は §5 のバックチャネル経路を使用します。
-
 issuer と `redirect_uri` はポートを含む URL の完全一致が必要です。各 LocalForward のローカルポートを変更する場合は、ブラウザから見える URL、`KC_HOSTNAME`、IdP に登録する `redirect_uri` の対応するポートも揃えて変更します。
+
+### 本番 IdP(The Internet)の Authorization Code フロー
+
+次の2図は、直前の検証用 Keycloak + localhost 経路に対し、本番 IdP が The Internet 上にある場合の通信を示します。Node B のバックチャネル経路は §5 の NAT Gateway 常設(経路A)、公開ホスト名の名前解決と証明書は §5.1 の前提に従います。
+
+```mermaid
+sequenceDiagram
+    participant B as ブラウザ(利用端末)
+    participant T as SSH トンネル(LocalForward 443)
+    participant W as Nginx / Open WebUI(Node B)
+    participant N as NAT Gateway
+    participant I as IdP(The Internet)
+
+    rect rgb(255, 245, 230)
+        Note over B,W: フロントチャネル(WebUI は SSH トンネル経由)
+        B->>T: https://公開ホスト名/ へアクセス
+        T->>W: Nginx 443 へ転送
+        W-->>T: OIDC ログイン開始・IdP 認可 endpoint へリダイレクト
+        T-->>B: リダイレクト応答
+    end
+    rect rgb(245, 235, 255)
+        Note over B,I: フロントチャネル(The Internet 直接・SSH トンネル非経由)
+        B->>I: IdP 認可 endpoint へ直接 HTTPS
+        I-->>B: ログイン画面
+        B->>I: 認証情報を送信
+        I-->>B: redirect_uri(https://公開ホスト名/oauth/oidc/callback)へ 302(code 付き)
+    end
+    rect rgb(255, 240, 240)
+        Note over B,W: callback は SSH トンネル経由
+        B->>T: redirect_uri へアクセス(code 付き)
+        T->>W: Nginx 443 から Open WebUI へ callback を転送
+        Note over W,I: バックチャネル(NAT Gateway 経由の外向き HTTPS)
+        W->>N: トークン endpoint へ code 交換要求
+        N->>I: HTTPS 要求を転送
+        I-->>N: ID トークン(groups claim を含む)
+        N-->>W: ID トークンを返却
+        W->>W: ログインセッションを確立
+    end
+```
+
+```mermaid
+flowchart LR
+    subgraph CLIENT["利用端末"]
+        HOSTS["hosts<br/>公開ホスト名 → 127.0.0.1"]
+        BROWSER["ブラウザ"]
+        L443["ssh -L<br/>ローカル 443 → Node B:443"]
+        HOSTS -.->|"名前解決"| BROWSER
+        BROWSER -->|"https://公開ホスト名/<br/>WebUI アクセス / callback 復帰"| L443
+    end
+
+    subgraph NODEB["Node B"]
+        NGINX["Nginx<br/>TLS 終端 :443"]
+        WEBUI["Open WebUI<br/>Docker network"]
+        NGINX --> WEBUI
+    end
+
+    subgraph AWS["AWS VPC 外部経路"]
+        NAT["NAT Gateway<br/>+ Internet Gateway"]
+    end
+
+    IDP["IdP<br/>The Internet"]
+
+    L443 --> NGINX
+    BROWSER -->|"フロントチャネル<br/>直接 HTTPS・トンネル非経由"| IDP
+    WEBUI -.->|"バックチャネル<br/>discovery / token HTTPS"| NAT
+    NAT -.-> IDP
+```
+
+ブラウザから IdP への認証通信は SSH トンネルを通らず、WebUI アクセスと `redirect_uri` への復帰だけが LocalForward 443 を使います。Open WebUI は callback 受信後、NAT Gateway を通じて IdP のトークン endpoint へ code を送り、`groups` claim を含む ID トークンを取得してセッションを確立します。
 
 ### 本番 IdP が localhost を許可しない場合
 
