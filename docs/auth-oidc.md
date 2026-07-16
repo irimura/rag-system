@@ -193,13 +193,15 @@ flowchart LR
     L8080 -->|"LocalForward :8180"| KEYCLOAK
 ```
 
+上の2図は、検証用 Keycloak とデバッグ用の `http://localhost:3000` を使う経路です。案1b/2/3 で HTTPS 公開名を使う標準経路では、Nginx の 443 へ LocalForward し、`https://${node_b_hostname}/oauth/oidc/callback` を Keycloak の `redirectUris` へ明示追加します。詳細は [Node B 構築手順](deployment-guide.md) §3.2 を参照してください。
+
 issuer と `redirect_uri` はポートを含む URL の完全一致が必要です。各 LocalForward のローカルポートを変更する場合は、ブラウザから見える URL、`KC_HOSTNAME`、IdP に登録する `redirect_uri` の対応するポートも揃えて変更します。
 
 ### 本番 IdP が localhost を許可しない場合
 
 検証用 Keycloak には `http://localhost:3000/oauth/oidc/callback` を登録しています。一方、組織の本番 IdP はセキュリティポリシーにより、`localhost` または `http` スキームの redirect URI を拒否する場合があります。申請時に登録可否を確認し、許可されない場合は次の順で対応します。
 
-1. **案3の Nginx と安定したホスト名を使用します。** `https://<公開ホスト名>/oauth/oidc/callback` を IdP へ具体値で登録します。公開ホスト名へのアクセスは SSH トンネルと利用端末の hosts(`公開ホスト名 → 127.0.0.1`)で維持でき、インターネット公開は不要です。ブラウザから見た URL、IdP に登録した `redirect_uri`、Nginx の server 名を一致させ、そのホスト名に対する TLS 証明書を社内 CA 等で発行します。
+1. **案1b/2/3 の全案共通の Nginx と安定したホスト名を使用します。** これは本番 IdP 接続時の標準経路です。`https://<公開ホスト名>/oauth/oidc/callback` を IdP へ具体値で登録します。公開ホスト名へのアクセスは SSH トンネルと利用端末の hosts(`公開ホスト名 → 127.0.0.1`)で維持でき、インターネット公開は不要です。ブラウザから見た URL、IdP に登録した `redirect_uri`、Nginx の server 名を一致させ、そのホスト名に対する TLS 証明書を社内 CA 等で発行します。
 2. **検証用の例外を申請します。** IdP 管理者へ localhost redirect の登録を依頼します。RFC 8252 ではネイティブアプリ向けに loopback redirect が認められていますが、Open WebUI のような Web アプリで許可されるかは組織ポリシーに従います。
 3. **検証段階を分離します。** どちらも許可されない場合、OIDC の機能検証は Keycloak で完結させ、本番 IdP との接続は公開ホスト名と TLS 証明書の整備後に行います。
 
