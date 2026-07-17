@@ -1,0 +1,43 @@
+# Node A: vLLM OpenAI 互換サーバ(推奨方式)
+# 使い方: cp -v .env.example .env で設定後、docker compose up -d
+# 前提: NVIDIA ドライバ(CUDA 12.8 対応)+ NVIDIA Container Toolkit 導入済み
+#       (Deep Learning Base OSS Nvidia Driver GPU AMI なら導入済み。01-design/node-specs.md 参照)
+services:
+  vllm:
+    image: vllm/vllm-openai:v0.23.0
+    # イメージの ENTRYPOINT (python3 -m vllm.entrypoints.openai.api_server) に
+    # 以下のオプションが引数として渡され、OpenAI 互換 API サーバが起動する
+    command:
+      - --model
+      - ${MODEL_PATH}
+      - --served-model-name
+      - ${SERVED_MODEL_NAME}
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
+      - --gpu-memory-utilization
+      - ${GPU_MEMORY_UTILIZATION:-0.90}
+      - --max-model-len
+      - ${MAX_MODEL_LEN:-8192}
+      - --tensor-parallel-size
+      - ${TENSOR_PARALLEL_SIZE:-1}
+      - --api-key
+      - ${VLLM_API_KEY}
+    ports:
+      - "8080:8000"
+    volumes:
+      - ${MODELS_DIR}:/models:ro
+      - hf-cache:/root/.cache/huggingface
+    ipc: host                      # vLLM のマルチプロセス共有メモリに必要
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  hf-cache:
