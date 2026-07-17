@@ -1,14 +1,14 @@
 # セッションコンテキスト(コーディングエージェント向け引き継ぎ)
 
-最終更新: 2026-07-17(§16 Markdown H1・Node A 事前構築文書の命名を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
+最終更新: 2026-07-17(§17 工程別リポジトリ再構成を追記、§2 等の現状パスを更新)/ 対象ブランチ: main(リモートなし・ローカルのみ)
 
-このリポジトリは **vLLM + LangChain による日本語 RAG システムの設計・構築・評価ドキュメント一式**である。コードよりドキュメントが主体で、`deploy/` のアプリコードはサンプル実装(構文検証済み・実ビルド/実行は未実施)。本ファイルは過去セッションの決定事項・規約・注意点の引き継ぎであり、**ここに書かれた決定を無断で覆さないこと**(変更するときはユーザーに確認する)。
+このリポジトリは **vLLM + LangChain による日本語 RAG システムの設計・構築・評価ドキュメント一式**である。コードよりドキュメントが主体で、`03-deployment/` のアプリコードはサンプル実装(構文検証済み・実ビルド/実行は未実施)。本ファイルは過去セッションの決定事項・規約・注意点の引き継ぎであり、**ここに書かれた決定を無断で覆さないこと**(変更するときはユーザーに確認する)。
 
 ## 1. プロジェクトの前提(ユーザー要件・確定事項)
 
 - vLLM は Hugging Face 形式モデルで稼働させる。**vLLM 同梱の OpenAI 互換サーバ(`vllm serve` / `vllm/vllm-openai` イメージ)を使い、自前 API ラッパーは書かない**
 - **無償利用可・ソース公開**のソフトウェアで構成する。クラウドのマネージドサービスは使わない(EC2 を素の VM として使うのは可)
-- 日本語の取り扱いが精度要件に含まれる(正規化・形態素解析 BM25・日本語特化モデル等は docs/rag-components.md に集約)
+- 日本語の取り扱いが精度要件に含まれる(正規化・形態素解析 BM25・日本語特化モデル等は `06-tuning/README.md` に集約)
 - インフラは AWS EC2(東京 ap-northeast-1 想定)
 
 ### ノード命名(重要 — ユーザーが 2 度取り違えた経緯あり)
@@ -23,21 +23,17 @@
 
 ## 2. リポジトリ構成と各ファイルの役割
 
-README.md の「ドキュメント構成」表が正のインデックス。概略:
+**2026-07-17 に工程別のトップレベル構成へ再構成した(§17)。** ルート README.md の工程表が正のインデックス。各工程ディレクトリの README.md がその工程の主文書。概略:
 
-- `README.md` — 全体設計・案1〜3比較・ライセンス一覧
-- `docs/plan{1,2,3}-*.md` — 実装案(案2 推奨)。図は **Mermaid**
-- `docs/rag-components.md` — Loader/Transformer/Embedding/VectorStore/Retriever/Rerank + 日本語固有ポイント
-- `docs/evaluation-spec.md` + `test/` + `eval/` — 2 段階評価(L1: HitRate/MRR/nDCG、L2: Ragas)・TC01〜TC10・実行スクリプト
-- `docs/test-data.md` — 公開コーパス/QA データセット(URL・ライセンスは Web で実在確認済み)
-- `docs/node-specs.md` — EC2 スペック選定・料金(**東京・1USD=160JPY・常時730h/日中帯160h** が基準)
-- `docs/aws-provisioning.md` — AWS 構築 Bash 手順(VPC/SG/EICE/NAT/EC2/AMI 化/自動停止)
-- `docs/node-a-pre-install.md` — Node A 単体の構築・確認手順(DLAMI 前提、手動導入は任意節)
-- `docs/deployment-guide.md` — Node B 構築手順(案1〜3)
-- `deploy/node-a/` — vLLM compose + systemd unit + .env.example
-- `deploy/plan{1,2,3}/` — Node B の compose/Dockerfile/アプリコード(rag-api は OpenAI 互換で公開し Open WebUI から 1 モデルに見せる設計)
+- `README.md` — 工程インデックス(1 段落サマリ + 工程表のみのスリム構成)
+- `01-design/` — 設計。`README.md`(全体設計・案1〜3比較・ライセンス一覧)、`plan{1,1b,2,3}-*.md`(実装案、案2 推奨。図は **Mermaid**)、`auth-oidc.md`、`node-specs.md`(EC2 スペック選定・料金。**東京・1USD=160JPY・常時730h/日中帯160h** が基準)
+- `02-provisioning/` — 構築。`aws-provisioning.md`(AWS 構築 Bash 手順: VPC/SG/EICE/NAT/EC2/AMI 化/自動停止)、`node-a-pre-install.md`(Node A 単体の構築・確認手順。DLAMI 前提、手動導入は任意節)、`node-a/`(vLLM compose + systemd unit + .env.example)
+- `03-deployment/` — デプロイ。`README.md`(Node B デプロイ手順、案1〜3)、`plan{1,1b,2,3}/`(compose/Dockerfile/アプリコード。rag-api は OpenAI 互換で公開し Open WebUI から 1 モデルに見せる設計。plan3/rag-api/tests/ にユニットテスト)、`keycloak/`
+- `04-corpus/` — コーパス取り込み。`README.md`(取り込み手順)、`corpus-datasets.md`(投入用公開コーパス集)、`prerequisites.md` / `download.md` / `ingest-plan*.md`、`scripts/`(取得・前処理スクリプト)
+- `05-evaluation/` — 精度評価。`README.md`(実行フロー)、`evaluation-spec.md`(2 段階評価: L1 HitRate/MRR/nDCG、L2 Ragas。TC01〜TC10)、`eval-datasets.md`(評価用 QA データセット集)、`golden_dataset.sample.jsonl`、`level1/` / `level2/`(実行スクリプト)、`cases/`(TC ケース手順書)
+- `06-tuning/` — チューニング。`README.md`(Loader/Transformer/Embedding/VectorStore/Retriever/Rerank + 日本語固有ポイント)
 
-## 3. AWS 設計の確定事項(docs/aws-provisioning.md)
+## 3. AWS 設計の確定事項(02-provisioning/aws-provisioning.md)
 
 - **単一プライベートサブネット** 192.168.0.0/26(VPC 192.168.0.0/24)に全ノード収容。固定プライベート IP(llm=.10, app=.21/.22/.23)
 - **Route 53 PHZ は不採用**(固定 IP のメリット優先、とユーザーが明示判断)
@@ -75,10 +71,10 @@ README.md の「ドキュメント構成」表が正のインデックス。概�
 
 ## 7. 未完了・注意付きの項目
 
-- `deploy/` のアプリコード(rag-api 等)は**未ビルド・未実行**(py_compile と設計レビューのみ)。初回起動時の不具合修正はあり得る
-- `eval/golden_dataset.sample.jsonl` の正解値は**取り込む法令の版で要確認**(サンプルの位置づけ)
-- Ragas は API 変更が多いため、`test/level2/requirements.txt` で 0.2 系へ固定済み。`pip freeze` は解決されたパッチ版の実験記録に使い、0.4 系へ上げる場合はコードも同時移行する
-- `test/` のスクリプトは案2(Qdrant+TEI)前提。案1/案3 への読み替えは各 procedure.md 末尾に記載
+- `03-deployment/` のアプリコード(rag-api 等)は**未ビルド・未実行**(py_compile と設計レビューのみ)。初回起動時の不具合修正はあり得る
+- `05-evaluation/golden_dataset.sample.jsonl` の正解値は**取り込む法令の版で要確認**(サンプルの位置づけ)
+- Ragas は API 変更が多いため、`05-evaluation/level2/requirements.txt` で 0.2 系へ固定済み。`pip freeze` は解決されたパッチ版の実験記録に使い、0.4 系へ上げる場合はコードも同時移行する
+- `05-evaluation/` の実行スクリプトは案2(Qdrant+TEI)前提。案1/案3 への読み替えは各 procedure.md 末尾に記載
 - plan1 の文書には venv+systemd 手順が「コンテナを使わない場合の代替」として残っている(Docker 版が正)
 - TC09(会話文脈)は現行 rag-api 実装が弱い設計と明記済み(history-aware 書き換えは将来改善)
 
@@ -127,7 +123,7 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 詳細設計は [01-design/auth-oidc.md](../01-design/auth-oidc.md)を正とする。デプロイコード変更は次フェーズ。
 
 - 本番 IdP は **外部ネットワーク(The Internet / 別 VPC)** 上に置く。フロントチャネルは利用端末から直接接続し、Node B から discovery/token endpoint へのバックチャネル経路を別途整備する
-- バックチャネルは The Internet 上の IdP 向け **NAT Gateway 常設**と、別 VPC 上の IdP 向け **VPC ピアリング**を両論併記する。具体手順は `docs/aws-provisioning.md` §2.3 を正とする
+- バックチャネルは The Internet 上の IdP 向け **NAT Gateway 常設**と、別 VPC 上の IdP 向け **VPC ピアリング**を両論併記する。具体手順は `02-provisioning/aws-provisioning.md` §2.3 を正とする
 - 検証用 IdP は **Keycloak**。外部 IdP の開通・経路整備前に OIDC フロー全体をネットワーク変更なしで先行検証する専用手段として維持し、本番運用では profile `idp` を起動しない
 - Open WebUI はローカル login form と OIDC を併存させ、検証中は手動グループ、本番は IdP group claim 同期へ移行する
 - 案2/3 の rag-api は認証方式非依存の principal とグループ解決を実装し、Vector DB 検索へ `group` filter を強制する。これは **N-03(rag-api 無認可)** の恒久対応方針
@@ -143,7 +139,7 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 
 - 案1b・案2も案3と同じ `nginx:1.30.4` を Open WebUI 前段へ置き、外部公開は 80/443(TLS 終端)に統一した。案1(Chainlit)は変更しない
 - Open WebUI のホスト 3000 は `127.0.0.1:3000:8080` のデバッグ用途だけとし、NGINX はコンテナ内 `open-webui:8080` へプロキシする
-- `deploy/plan1b/nginx/conf.d/rag.conf` と `deploy/plan2/nginx/conf.d/rag.conf` は案3と同一。証明書生成物は Git 管理せず `.gitkeep` だけ保持する
+- `03-deployment/plan1b/nginx/conf.d/rag.conf` と `03-deployment/plan2/nginx/conf.d/rag.conf` は案3と同一。証明書生成物は Git 管理せず `.gitkeep` だけ保持する
 - NGINX の常駐オーバーヘッドは軽微なため、案1b・案2の推奨 Instance Type は据え置く
 - 検証環境に Docker CLI がないため、`docker compose config`、自己署名証明書での起動、HTTP 301 / HTTPS 200、3000 の loopback bind、ブラウザでの SSE/WebSocket・アップロードは未検証。NGINX 設定3案の SHA-256 一致と静的検証のみ実施した
 
@@ -156,8 +152,8 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 
 ## 13. 段階別コーパス取り込み手順(2026-07-16)
 
-- `scripts/corpus/` を新設し、共通 `corpus.env`、e-Gov/情報通信白書/IPA/livedoor/Wikipedia の取得、法令/Wikipedia の前処理、段階別配置、固定依存、スクリプト索引を追加した
-- `docs/corpus/` を新設し、全体マトリクス、事前準備、コーパス別取得・検収、案1/1b/2/3別の投入・検収・トラブルシュートを追加した
+- `04-corpus/scripts/`(当時 `scripts/corpus/`)を新設し、共通 `corpus.env`、e-Gov/情報通信白書/IPA/livedoor/Wikipedia の取得、法令/Wikipedia の前処理、段階別配置、固定依存、スクリプト索引を追加した
+- `04-corpus/`(当時 `docs/corpus/`)を新設し、全体マトリクス、事前準備、コーパス別取得・検収、案1/1b/2/3別の投入・検収・トラブルシュートを追加した
 - 文書配置グループは **`laws` / `whitepaper` / `ipa` / `livedoor` / `wikipedia`** に固定する。案2/3では `documents/<group>/...` の第1階層を認可メタデータとし、直下ファイルは fail closed。案1も移行互換のため同じ配置を使う
 - 案1/2/3は段階が進むたびに `documents/` へ累積配置し、既存コレクション/インデックスを削除して全量再取り込みする。差分だけでは実行しない
 - 案1bは `documents/` / `ingest.py` を持たないため、Open WebUIの private Knowledgeへ UI/API で追加する。数十万チャンク以上の段階3(負荷・規模試験)は対象外とし、案2/3へ移行する
@@ -185,3 +181,16 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 
 - Markdown の H1 は工程番号やディレクトリパスを含めず、「対象 + 文書種別」の形で文書内容を単体で判別できる表現にする
 - Node A の文書名は `02-provisioning/node-a-pre-install.md`、H1 は「Node A 事前構築手順書」とする。「事前」は、この後に機密の vLLM 配置作業を別途実施する位置づけを示すため維持する
+
+## 17. 工程別リポジトリ再構成(2026-07-17)
+
+旧 `docs/ deploy/ eval/ scripts/ test/` を廃止し、工程別のトップレベル 6 ディレクトリ(ケバブケース + 番号接頭辞)へ再構成した(マージコミット `8f50495`)。現在の構成は §2 を参照。主な対応:
+
+- `docs/` の設計文書 → `01-design/`、AWS/Node A 手順 → `02-provisioning/`(`deploy/node-a/` も 02 へ)
+- `deploy/plan*` + `deployment-guide.md` → `03-deployment/`(deployment-guide.md は `03-deployment/README.md` へ昇格)
+- `docs/corpus/` + `scripts/corpus/` → `04-corpus/`(scripts は `04-corpus/scripts/`)
+- `docs/evaluation-spec.md` + `test/` + `eval/` → `05-evaluation/`。ただし `test/plan3/test_query_rewrite.py` はコード隣接の `03-deployment/plan3/rag-api/tests/` へ
+- `docs/rag-components.md` → `06-tuning/README.md` へ昇格
+- `docs/test-data.md` は 2 分割: 投入用コーパス → `04-corpus/corpus-datasets.md`、評価用 QA/ベンチマーク/合成データ → `05-evaluation/eval-datasets.md`
+- 慣行: **各工程ディレクトリの README.md = その工程の主文書**(02 のみ 2 手順の使い分けを示す入口文書)。ルート README は工程インデックスに限定
+- 本ファイルの §2・§3・§7・§10・§11・§13 のパス表記は再構成後のものへ更新済み。§8・§9 は履歴記述のため当時のパスのまま(実体は git 履歴で追跡可能)
