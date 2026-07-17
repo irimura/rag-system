@@ -1,6 +1,6 @@
-# レベル1 手順書 — Retrieval 評価(Hit Rate / Evidence Recall / MRR / nDCG)
+# レベル1: Retrieval 評価の実行手順
 
-- 目的: Retriever(+Reranker)が正解根拠を上位に取得できているかを**決定的に**測定する
+- 目的: Retriever(+Reranker)が正解根拠を上位に取得できているかを Hit Rate / Evidence Recall / MRR / nDCG で**決定的に**測定する
 - 特徴: LLM 不要・数分で完了・毎回同じ結果。構成変更のたびに必ず実行する
 - 指標の定義と合否基準: [evaluation-spec.md](./../evaluation-spec.md) §2.1 / §6
 

@@ -1,6 +1,6 @@
-# レベル2 手順書 — Generation 評価(Ragas / 該当なし正答率)
+# レベル2: Generation 評価の実行手順
 
-- 目的: End-to-End の回答品質(捏造の有無・正答性・論点適合)を LLM-as-a-Judge で採点する
+- 目的: End-to-End の回答品質(捏造の有無・正答性・論点適合)を Ragas で採点し、該当なし正答率も測定する
 - 前提: **レベル1 合格後に実行する**(検索が悪い状態での生成評価は無意味)
 - 指標の定義と合否基準: [evaluation-spec.md](./../evaluation-spec.md) §2.2 / §6
 

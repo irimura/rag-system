@@ -1,4 +1,4 @@
-# 検証用 Keycloak
+# 検証用 Keycloak 構築手順
 
 `realm-rag.json` は、外部 IdP の開通とバックチャネル経路整備が完了する前に、OIDC フロー全体(ログイン、`groups` claim、グループ同期)をネットワーク変更なしで先行検証するための realm import です。`open-webui` client の固定 secret と初期パスワードは、隔離された検証環境での露出を前提とした値であり、本番では使用しません。外部 IdP の開通後は compose profile `idp` を起動しません。
 

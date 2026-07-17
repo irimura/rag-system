@@ -1,4 +1,4 @@
-# Node B 構築手順書(全案)
+# Node B デプロイ手順(全案)
 
 [03-deployment/](./) 配下の Dockerfile / docker-compose.yml / パラメータファイルを使って、アプリ+データノード(Node B)を構築する手順です。
 
