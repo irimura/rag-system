@@ -3,7 +3,7 @@
 RAG の評価パイプライン、コンポーネント比較、合成 QA の補完に使える公開データをまとめます。
 Vector DB へ投入する文書候補は [コーパス候補データセット](../04-corpus/corpus-datasets.md) を参照してください。
 
-## 2. 評価用 QA データセット(質問 + 正解付き)
+## 1. 評価用 QA データセット(質問 + 正解付き)
 
 **「コーパスと QA が対で揃っている」**公開データセット。自ドメインのゴールデンデータセットを作る前に、これらで評価パイプライン自体(スクリプト・指標計算)を検証するのが標準的な進め方。
 
@@ -24,18 +24,18 @@ Vector DB へ投入する文書候補は [コーパス候補データセット](
 
 > JSQuAD は「コンテキストが与えられる前提」の抽出型 QA のため、全体を検索対象にすると難易度が上がる(それ自体が Retriever の良い試験になる)。該当なしケース(TC07)は含まれないので、**別コーパスの質問を混ぜて自作**する。
 
-## 3. コンポーネント選定ベンチマーク(モデル比較用)
+## 2. コンポーネント選定ベンチマーク(モデル比較用)
 
 自前評価の前段で、Embedding / Reranker の候補モデルを絞るのに使う公開リーダーボード・ベンチマーク。
 
 | ベンチマーク | 対象 | URL |
 |---|---|---|
 | **JMTEB** | 日本語 Embedding(検索・分類・STS 等) | https://github.com/sbintuitions/JMTEB |
-| **JQaRA** | 日本語 Retriever / Reranker | 上記 §2 |
-| **JaCWIR** | 日本語 Retriever / Reranker(Web 文体) | 上記 §2 |
+| **JQaRA** | 日本語 Retriever / Reranker | 上記 §1 |
+| **JaCWIR** | 日本語 Retriever / Reranker(Web 文体) | 上記 §1 |
 | MTEB Leaderboard | 多言語 Embedding(参考) | https://huggingface.co/spaces/mteb/leaderboard |
 
-## 4. 合成データによる補完(Ragas TestsetGenerator)
+## 3. 合成データによる補完(Ragas TestsetGenerator)
 
 公開データセットで賄えない**自ドメイン風の質問量産**には、Ragas の TestsetGenerator を使う(LLM は vLLM を指定 — 無償で完結)。
 
