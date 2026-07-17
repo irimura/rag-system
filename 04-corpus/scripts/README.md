@@ -1,6 +1,6 @@
 # コーパス取得・前処理スクリプト
 
-Node B(Ubuntu 24.04)上で、[テストデータ集](../../docs/test-data.md) §1 の推奨コーパスを取得・前処理し、案1/2/3の `documents/<グループ名>/` へ累積配置するスクリプトです。案1bはファイル配置型の ingest を持たないため、後続の `docs/corpus/ingest-plan1b.md` に記載する UI/API 手順を使用します。
+Node B(Ubuntu 24.04)上で、[テストデータ集](../corpus-datasets.md) §1 の推奨コーパスを取得・前処理し、案1/2/3の `documents/<グループ名>/` へ累積配置するスクリプトです。案1bはファイル配置型の ingest を持たないため、後続の `04-corpus/ingest-plan1b.md` に記載する UI/API 手順を使用します。
 
 > 以降のコマンド例中の `${repo_dir}` は、実行前にリポジトリの絶対パスへ置き換えてください。
 
@@ -30,7 +30,7 @@ cd ${repo_dir}
 python3 -m venv .venv-corpus
 source .venv-corpus/bin/activate
 python3 -m pip install --upgrade pip
-python3 -m pip install -r scripts/corpus/requirements.txt
+python3 -m pip install -r 04-corpus/scripts/requirements.txt
 ```
 
 `requirements.txt` は PyPI 公開版の `wikiextractor==3.0.6` に固定しています。WikiExtractor 本体のライセンスは AGPL-3.0-or-laterです。コーパス成果物のライセンスは各配布元の条件に従います。
@@ -38,7 +38,7 @@ python3 -m pip install -r scripts/corpus/requirements.txt
 ## 3. `corpus.env` の準備
 
 ```bash
-cd ${repo_dir}/scripts/corpus
+cd ${repo_dir}/04-corpus/scripts
 cp -v corpus.env.example corpus.env
 vim corpus.env
 ```
@@ -64,10 +64,10 @@ vim corpus.env
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/download_egov_laws.sh
-python3 scripts/corpus/preprocess_egov.py
-bash scripts/corpus/download_soumu_whitepaper.sh
-bash scripts/corpus/prepare_stage.sh smoke 2 copy
+bash 04-corpus/scripts/download_egov_laws.sh
+python3 04-corpus/scripts/preprocess_egov.py
+bash 04-corpus/scripts/download_soumu_whitepaper.sh
+bash 04-corpus/scripts/prepare_stage.sh smoke 2 copy
 ```
 
 `SOUMU_WHITEPAPER_URL` が空の場合は、表示された公式ページから PDF を手動取得して、表示された保存先へ配置します。
@@ -76,9 +76,9 @@ bash scripts/corpus/prepare_stage.sh smoke 2 copy
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/download_ipa.sh
-bash scripts/corpus/download_livedoor.sh
-bash scripts/corpus/prepare_stage.sh accuracy 2 copy
+bash 04-corpus/scripts/download_ipa.sh
+bash 04-corpus/scripts/download_livedoor.sh
+bash 04-corpus/scripts/prepare_stage.sh accuracy 2 copy
 ```
 
 動作確認段階の `laws` / `whitepaper` は残したまま、`ipa` / `livedoor` を加えます。livedoor本文は改変・要約保存せず、社内評価用途に限定し、検索内部で生成されるチャンクを含む成果物を再配布しません。
@@ -87,15 +87,15 @@ bash scripts/corpus/prepare_stage.sh accuracy 2 copy
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/download_wikipedia_dump.sh --mode partial
-python3 scripts/corpus/preprocess_wikipedia.py --max-articles 10000
-bash scripts/corpus/prepare_stage.sh load 2 copy
+bash 04-corpus/scripts/download_wikipedia_dump.sh --mode partial
+python3 04-corpus/scripts/preprocess_wikipedia.py --max-articles 10000
+bash 04-corpus/scripts/prepare_stage.sh load 2 copy
 ```
 
 全件ダンプを使う場合は `--mode full` と `--max-articles 0` を指定します。カテゴリだけを対象にする場合は `--category` を複数回指定できます。
 
 ```bash
-python3 scripts/corpus/preprocess_wikipedia.py --max-articles 50000 --category 情報技術 --category コンピュータ
+python3 04-corpus/scripts/preprocess_wikipedia.py --max-articles 50000 --category 情報技術 --category コンピュータ
 ```
 
 Wikipediaの抽出テキストには記事名、元URL、CC BY-SA 4.0を記録します。
@@ -105,11 +105,11 @@ Wikipediaの抽出テキストには記事名、元URL、CC BY-SA 4.0を記録�
 `prepare_stage.sh` の第2引数は `1` / `2` / `3`、第3引数は `copy` / `symlink` です。既定はコピーです。`SOURCE.md` / `LICENSE.txt` / `CHANGES.txt` / `README.txt` は出典・ライセンス確認用として raw側に保持しますが、検索コーパスには配置しません。
 
 ```bash
-bash scripts/corpus/prepare_stage.sh accuracy 1 copy
-bash scripts/corpus/prepare_stage.sh accuracy 2 copy
-bash scripts/corpus/prepare_stage.sh load 3 copy
+bash 04-corpus/scripts/prepare_stage.sh accuracy 1 copy
+bash 04-corpus/scripts/prepare_stage.sh accuracy 2 copy
+bash 04-corpus/scripts/prepare_stage.sh load 3 copy
 ```
 
 配置先のグループ名は `laws` / `whitepaper` / `ipa` / `livedoor` / `wikipedia` に固定します。`documents/` 直下には配置しません。各段階で既存ファイルを削除せず累積配置し、その後に対象案の ingest を実行してコレクション/インデックスを全量再構築します。
 
-`symlink` はディスク節約用の任意オプションです。`${CORPUS_DIR}` への絶対リンクを作成するため、Docker ingestで使用するには対象案の ingestサービスへ `${CORPUS_DIR}:${CORPUS_DIR}:ro` を追加マウントし、ホストとコンテナで同じ絶対パスを見せる必要があります。具体的な環境変数の読み込みと compose設定は [事前準備](../../docs/corpus/prerequisites.md) §1を参照してください。標準 compose のまま実行する場合は `copy` を使用してください。
+`symlink` はディスク節約用の任意オプションです。`${CORPUS_DIR}` への絶対リンクを作成するため、Docker ingestで使用するには対象案の ingestサービスへ `${CORPUS_DIR}:${CORPUS_DIR}:ro` を追加マウントし、ホストとコンテナで同じ絶対パスを見せる必要があります。具体的な環境変数の読み込みと compose設定は [事前準備](../prerequisites.md) §1を参照してください。標準 compose のまま実行する場合は `copy` を使用してください。

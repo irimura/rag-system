@@ -5,7 +5,7 @@ vLLM が稼働する GPU ノード(Node A)とは分離し、**アプリノード
 Node B 側の標準デプロイは Docker Compose で、必要に応じて venv + systemd だけの代替構成も選べます。
 コードを書かずに同等の最小構成を試す場合は [案1b](plan1b-openwebui.md)を選びます。
 
-> **構築ファイル**: [deploy/plan1/](../deploy/plan1/)(Docker 版)/ 手順: [deployment-guide.md](deployment-guide.md)。本書後半の venv + systemd 手順はコンテナを使わない場合の代替。
+> **構築ファイル**: [03-deployment/plan1/](../03-deployment/plan1/)(Docker 版)/ 手順: [deployment-guide.md](../03-deployment/deployment-guide.md)。本書後半の venv + systemd 手順はコンテナを使わない場合の代替。
 
 ## 構成図
 
@@ -60,7 +60,7 @@ Chainlit は認証 hook を提供しますが、ローカル password と OIDC �
 # Node B(アプリノード)上。リポジトリルートから実行
 python3 -m venv ~/rag/.venv && source ~/rag/.venv/bin/activate
 pip install "torch~=2.7.0" --index-url https://download.pytorch.org/whl/cpu
-pip install -r deploy/plan1/app/requirements.txt
+pip install -r 03-deployment/plan1/app/requirements.txt
 ```
 
 ## 実装例
@@ -148,4 +148,4 @@ WantedBy=multi-user.target
 ## この案から次へ進む判断基準
 
 - 同時利用者が増えて応答が遅くなった → **案2**(Embedding/Rerank をコンテナ分離)
-- キーワード検索の取りこぼしが目立つ → まず **`BM25Retriever`(rank_bm25)+ `EnsembleRetriever` の追加**でハイブリッド化を試す(サーバ追加不要。[rag-components.md §5](rag-components.md) 参照)。それでも規模的に足りなければ **案3**
+- キーワード検索の取りこぼしが目立つ → まず **`BM25Retriever`(rank_bm25)+ `EnsembleRetriever` の追加**でハイブリッド化を試す(サーバ追加不要。[rag-components.md §5](../06-tuning/rag-components.md) 参照)。それでも規模的に足りなければ **案3**

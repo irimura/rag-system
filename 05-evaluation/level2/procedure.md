@@ -2,7 +2,7 @@
 
 - 目的: End-to-End の回答品質(捏造の有無・正答性・論点適合)を LLM-as-a-Judge で採点する
 - 前提: **レベル1 合格後に実行する**(検索が悪い状態での生成評価は無意味)
-- 指標の定義と合否基準: [evaluation-spec.md](../../docs/evaluation-spec.md) §2.2 / §6
+- 指標の定義と合否基準: [evaluation-spec.md](./../evaluation-spec.md) §2.2 / §6
 
 ## 1. 前提条件
 
@@ -13,7 +13,7 @@
 ## 2. 実行環境の準備(初回のみ、Node B 上)
 
 ```bash
-cd rag-system/test/level2
+cd rag-system/05-evaluation/level2
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 pip freeze > requirements.lock.txt   # 実際に解決されたパッチ版も実験記録として保存する
@@ -59,7 +59,7 @@ Answer Correctness     : 0.78
 
 ## 5. 記録と注意点
 
-- 実験管理表(`eval/experiments.md`)にスコアを追記し、`answers.jsonl` を実験 ID 付きで保存する(後から judge の採点を目視検証できるように)
+- 実験管理表(`05-evaluation/experiments.md`)にスコアを追記し、`answers.jsonl` を実験 ID 付きで保存する(後から judge の採点を目視検証できるように)
 - **LLM-as-a-Judge のスコアは絶対値でなく相対比較に使う**。judge モデルや Ragas バージョンを変えたらベースラインから取り直す
 - スコアが疑わしいケースは `answers.jsonl` の該当行を目視確認する(judge の誤採点は一定数ある)
 - 採点用コンテキストは rag-api の `/internal/evaluation/retrieve`、回答は本番と同じ `/v1/chat/completions` から取得する。検索と回答は別リクエストになるが、どちらも rag-api 内の同じ検索関数を通る

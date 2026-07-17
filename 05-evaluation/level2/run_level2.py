@@ -20,7 +20,7 @@ from run_level1 import RAG_API_URL, load_cases, retrieve  # noqa: E402
 VLLM_BASE_URL = os.environ["VLLM_BASE_URL"]
 VLLM_MODEL = os.environ["VLLM_MODEL"]
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "dummy")
-GOLDEN_PATH = os.getenv("GOLDEN_PATH", "../../eval/golden_dataset.sample.jsonl")
+GOLDEN_PATH = os.getenv("GOLDEN_PATH", "../golden_dataset.sample.jsonl")
 ANSWERS_PATH = os.getenv("ANSWERS_PATH", "answers.jsonl")
 NO_ANSWER_PHRASE = "資料からは回答できません"
 

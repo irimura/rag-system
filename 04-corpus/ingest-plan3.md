@@ -5,7 +5,7 @@
 ## 前提
 
 - [事前準備](prerequisites.md) と [ダウンロード手順](download.md) を完了している
-- [Node B構築手順](../deployment-guide.md) §3の Security Plugin有効手順を完了している
+- [Node B構築手順](../03-deployment/deployment-guide.md) §3の Security Plugin有効手順を完了している
 - `vm.max_map_count=262144`、`.env`、TLS証明書、`auth/groups.json` を準備済み
 - 固定5グループを `groups.json` に登録し、`security-init` がグループ別 DLS role/internal userを作成できる
 - OpenSearch起動後に同じコンテナから `root-ca.pem` を取得し、`rag-api` / `security-init` / `ingest` へ read-only mountしている
@@ -18,7 +18,7 @@ ingestは既存 indexを削除し、mappingを再作成して、TEI埋め込み�
 ## 段階1(動作確認)
 
 ```bash
-cd ${repo_dir}/deploy/plan3
+cd ${repo_dir}/03-deployment/plan3
 sudo sysctl -w vm.max_map_count=262144
 vim .env
 vim auth/groups.json
@@ -31,8 +31,8 @@ docker compose up -d
 docker compose ps -a security-init
 docker compose logs security-init
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh smoke 3 copy
-cd deploy/plan3
+bash 04-corpus/scripts/prepare_stage.sh smoke 3 copy
+cd 03-deployment/plan3
 docker compose --profile ingest run --rm ingest
 ```
 
@@ -42,8 +42,8 @@ OpenSearchログの started確認後に `docker compose logs -f` を Ctrl-Cで�
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh accuracy 3 copy
-cd deploy/plan3
+bash 04-corpus/scripts/prepare_stage.sh accuracy 3 copy
+cd 03-deployment/plan3
 docker compose --profile ingest run --rm ingest
 ```
 
@@ -53,8 +53,8 @@ docker compose --profile ingest run --rm ingest
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh load 3 copy
-cd deploy/plan3
+bash 04-corpus/scripts/prepare_stage.sh load 3 copy
+cd 03-deployment/plan3
 docker compose --profile ingest run --rm ingest
 ```
 

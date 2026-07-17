@@ -1,6 +1,6 @@
-# test/ — RAG 精度評価の実行手順書
+# 05-evaluation/ — RAG 精度評価の実行手順書
 
-[docs/evaluation-spec.md](../docs/evaluation-spec.md)(テスト仕様書)を実際に実行する際の手順書とサンプルスクリプト群です。
+[05-evaluation/evaluation-spec.md](evaluation-spec.md)(テスト仕様書)を実際に実行する際の手順書とサンプルスクリプト群です。
 
 ## ディレクトリ構成
 
@@ -24,18 +24,18 @@ flowchart LR
     L1 -->|"合格"| L2["レベル2<br/>Generation 評価"]
     L1 -->|"不合格"| FIX1["検索側の改善<br/>(チャンク/Embedding/Rerank)"]
     FIX1 --> L1
-    L2 --> REC["記録<br/>eval/experiments.md に 1 行追記"]
+    L2 --> REC["記録<br/>05-evaluation/experiments.md に 1 行追記"]
     L2 -->|"個別観点の深掘り"| CASE["cases/ のケース手順書"]
 ```
 
-1. **準備**: 対象の案(1〜3)を構築し、評価用コーパスを取り込む([docs/deployment-guide.md](../docs/deployment-guide.md))。構成パラメータを記録して固定する(仕様書 §5.1)
+1. **準備**: 対象の案(1〜3)を構築し、評価用コーパスを取り込む([03-deployment/deployment-guide.md](../03-deployment/deployment-guide.md))。構成パラメータを記録して固定する(仕様書 §5.1)
 2. **レベル1**([level1/procedure.md](level1/procedure.md)): 全ケースの検索指標を機械判定。**不合格ならここで止めて検索側を改善**(生成評価に進まない)
 3. **レベル2**([level2/procedure.md](level2/procedure.md)): End-to-End の生成品質を LLM-as-a-Judge で採点
 4. **記録**: 実験管理表に構成とスコアを 1 行追記(仕様書 §7)。カテゴリ別スコアが低い観点は `cases/` の該当手順書で個別に深掘りする
 
 ## 共通の前提
 
-- ゴールデンデータセット: [eval/golden_dataset.sample.jsonl](../eval/golden_dataset.sample.jsonl) の形式(仕様書 §3.1)。実運用では自ドメイン版を `eval/golden_dataset.jsonl` として作成し、環境変数 `GOLDEN_PATH` で指定する
+- ゴールデンデータセット: [05-evaluation/golden_dataset.sample.jsonl](golden_dataset.sample.jsonl) の形式(仕様書 §3.1)。実運用では自ドメイン版を `05-evaluation/golden_dataset.jsonl` として作成し、環境変数 `GOLDEN_PATH` で指定する
 - サンプルスクリプトは **案2(Qdrant + TEI)構成の Node B 上での実行**を前提とする。案1(Chroma)/案3(OpenSearch)への読み替えは各手順書末尾の補足を参照。案1b(Open WebUI 内蔵 RAG)は rag-api の HTTP エンドポイントを持たないため、レベル1評価の対象外とし、GUI での確認または別の評価経路へ読み替える
 - スクリプトは Node B の `127.0.0.1` に公開済みの rag-api(8000)を使い、レベル2の judge 埋め込みだけ TEI(8081)を使う。Qdrant を評価コードから直接呼ばないため、**追加のポート公開は不要**
 - 判定に迷う結果は「不合格側」に倒して記録する(甘い判定は改善の機会を潰す)

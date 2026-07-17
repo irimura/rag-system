@@ -16,7 +16,7 @@ import os
 from collections import defaultdict
 
 RAG_API_URL = os.getenv("RAG_API_URL", "http://localhost:8000")
-GOLDEN_PATH = os.getenv("GOLDEN_PATH", "../../eval/golden_dataset.sample.jsonl")
+GOLDEN_PATH = os.getenv("GOLDEN_PATH", "../golden_dataset.sample.jsonl")
 
 def load_cases(path: str) -> list[dict]:
     with open(path, encoding="utf-8") as f:
@@ -154,7 +154,7 @@ def main() -> None:
         hits = sum(r["hit_post"] for r in rs)
         print(f"{cat:24s}: {hits / len(rs):.3f} ({hits}/{len(rs)})")
 
-    print("\n実験管理表用(eval/experiments.md に追記):")
+    print("\n実験管理表用(05-evaluation/experiments.md に追記):")
     print(f"| | | | {hr_post:.2f} | {recall_post:.2f} | {mrr:.2f} | - | - | - | HR@{retrieve_k}前={hr_pre:.2f} |")
 
 

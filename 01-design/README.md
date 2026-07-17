@@ -1,39 +1,6 @@
-# vLLM + LangChain による RAG システム インフラ構成 設計資料
+# vLLM + LangChain による RAG システム設計
 
-- 対象環境: Ubuntu Server(オンプレミス / 自宅サーバ / VPS 等)
-- 前提: Hugging Face 形式のモデルを **vLLM** で稼働済み(OpenAI 互換 API)
-  - vLLM の要求スペック(GPU): **Ampere 世代以降・VRAM 40GB 以上・CUDA 12.8 対応**
-  - vLLM の要求スペック(ソフトウェア): **NVIDIA Driver(CUDA 12.8 対応版)+ NVIDIA Container Toolkit**
-  - 上記要件を満たす推論専用の GPU ノード(Node A)として扱う
-- 方針:
-  - **無償利用可・ソース公開**のソフトウェアで構成する(ライセンス一覧は末尾参照)
-  - **クラウド固有のマネージドサービスは使用しない**(全コンポーネントをセルフホスト)
-  - オーケストレーションは **LangChain** を使用(案1b のみ Open WebUI 内蔵 RAG で LangChain 不使用)
-  - 全案共通で **GPU ノード(Node A)とアプリ+データノード(Node B)の 2 ノード構成** を基本とする(§2 参照)
-
-## ドキュメント構成
-
-| ファイル | 内容 |
-|---|---|
-| [README.md](README.md) | 本資料(全体設計・実装案・精度向上の解説) |
-| [docs/plan1-minimal.md](docs/plan1-minimal.md) | 案1: シングルプロセス最小構成 |
-| [docs/plan1b-openwebui.md](docs/plan1b-openwebui.md) | 案1b: Open WebUI 内蔵 RAG 最小構成(コード不要) |
-| [docs/plan2-standard.md](docs/plan2-standard.md) | 案2: Docker Compose 標準構成 |
-| [docs/plan3-hybrid.md](docs/plan3-hybrid.md) | 案3: ハイブリッド検索・本格構成 |
-| [docs/auth-oidc.md](docs/auth-oidc.md) | Query 系の OIDC/ローカル認証併用とグループ別 Vector DB 認可の導入設計 |
-| [docs/rag-components.md](docs/rag-components.md) | RAG 精度向上のための構成要素解説(Loader / Transformer / Embedding / Vector DB / Retriever / Rerank) |
-| [docs/evaluation-spec.md](docs/evaluation-spec.md) | RAG 精度評価のテスト仕様書(指標定義・テスト観点 TC01〜TC10・実行手順・合否基準) |
-| [docs/test-data.md](docs/test-data.md) | テストデータ集(Vector DB 投入用の公開コーパス・評価用 QA データセットへのリンク) |
-| [docs/corpus/](docs/corpus/README.md) | 段階別・デプロイ案別のコーパス取得、前処理、配置、投入、検収手順 |
-| [eval/golden_dataset.sample.jsonl](eval/golden_dataset.sample.jsonl) | ゴールデンデータセットのサンプル(テスト観点別 10 ケース) |
-| [test/](test/) | 評価の実行手順書(レベル1/レベル2 の手順 + 実行スクリプト、テスト観点別のケース手順書) |
-| [docs/node-specs.md](docs/node-specs.md) | ノードスペック選定(AWS EC2 の Instance Type / AMI / EBS / セキュリティグループ / 月額試算) |
-| [docs/aws-provisioning.md](docs/aws-provisioning.md) | AWS 構築手順(Bash/CLI で VPC・サブネット・SG・NAT Gateway・EICE・EC2 を作成/削除/AMI 化/AMI から再作成) |
-| [docs/node-a-pre-install.md](docs/node-a-pre-install.md) | Node A 単体の構築・動作確認手順(DLAMI 確認 → deploy/node-a/ での vLLM 起動まで) |
-| [docs/deployment-guide.md](docs/deployment-guide.md) | Node B 構築手順書(全案の構築・確認・運用・トラブルシューティング) |
-| [deploy/](deploy/) | 構築ファイル一式(Node A の vLLM サービス化 / 案毎の Dockerfile / docker-compose.yml / .env.example / nginx conf / OpenSearch マッピング / アプリコード) |
-
----
+本書はシステムの全体像、2ノード構成、実装4案、精度向上の要点、ライセンスをまとめた設計資料です。工程全体の入口は [ルート README](../README.md) を参照してください。
 
 ## 1. 全体像 — RAG に必要な構成要素
 
@@ -81,7 +48,7 @@ flowchart LR
 | **リバースプロキシ** | TLS 終端・ルーティング(案1b/2/3) | Nginx / Caddy |
 | **メタデータ DB** | 会話履歴・ユーザー管理(案3) | PostgreSQL |
 
-> 各要素の詳細と精度向上のポイントは [docs/rag-components.md](docs/rag-components.md) を参照。
+> 各要素の詳細と精度向上のポイントは [06-tuning/rag-components.md](../06-tuning/rag-components.md) を参照。
 
 ---
 
@@ -136,7 +103,7 @@ flowchart LR
 
 | | 案1: 最小構成 | 案1b: コード不要最小構成 | 案2: 標準構成(推奨) | 案3: 本格構成 |
 |---|---|---|---|---|
-| 詳細 | [plan1-minimal.md](docs/plan1-minimal.md) | [plan1b-openwebui.md](docs/plan1b-openwebui.md) | [plan2-standard.md](docs/plan2-standard.md) | [plan3-hybrid.md](docs/plan3-hybrid.md) |
+| 詳細 | [plan1-minimal.md](plan1-minimal.md) | [plan1b-openwebui.md](plan1b-openwebui.md) | [plan2-standard.md](plan2-standard.md) | [plan3-hybrid.md](plan3-hybrid.md) |
 | ノード構成 | Node A + Node B | Node A + Node B | Node A + Node B | Node A + Node B(将来 DB を Node C に分離可) |
 | WebUI | Chainlit(API 同居) | Open WebUI + Nginx(TLS) | Open WebUI + Nginx(TLS) | Open WebUI + Nginx(TLS) |
 | RAG API | Chainlit プロセス内 | Open WebUI 内蔵 RAG(コード不要) | FastAPI + LangChain | FastAPI + LangGraph |
@@ -162,7 +129,7 @@ flowchart LR
 
 ## 4. 精度向上の要点(サマリ)
 
-詳細は [docs/rag-components.md](docs/rag-components.md)。特に効果が大きい順に:
+詳細は [06-tuning/rag-components.md](../06-tuning/rag-components.md)。特に効果が大きい順に:
 
 1. **Reranker の導入** — Retriever で広め(k=20〜50)に取り、CrossEncoder で上位 3〜5 件に絞る。最も費用対効果が高い。
 2. **チャンク分割の見直し** — 文書構造(見出し)を保った分割 + 適切なチャンクサイズ。日本語はセパレータ調整が必須。

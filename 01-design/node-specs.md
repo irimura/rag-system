@@ -27,7 +27,7 @@
 | 必須ソフトウェア | **NVIDIA Driver** / **NVIDIA Container Toolkit**(Docker 方式で vLLM を動かすため) |
 
 - ソフトウェア要件は後述の Deep Learning Base OSS Nvidia Driver GPU AMI で充足できる(§1.4)。導入済みドライバが CUDA 12.8 に対応しているかは、AMI のリリースノートと起動後の `nvidia-smi`(右上の CUDA Version 表示が 12.8 以上)で確認する
-- venv + systemd 方式([deploy/node-a/vllm.service](../deploy/node-a/vllm.service))を採る場合、NVIDIA Container Toolkit は不要(Driver のみ必須)
+- venv + systemd 方式([02-provisioning/node-a/vllm.service](../02-provisioning/node-a/vllm.service))を採る場合、NVIDIA Container Toolkit は不要(Driver のみ必須)
 
 ### 1.2 選定基準
 
@@ -55,7 +55,7 @@ GPU インスタンスの選定は、次の順で絞り込みます。
 
 ### 1.4 AMI
 
-**Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04)** — G6e をサポート対象に含みます。§1.1 の必須ソフトウェア(NVIDIA Driver・**Docker・NVIDIA Container Toolkit**)が導入済みのため、Toolkit の個別導入は不要で、[deploy/node-a/](../deploy/node-a/) の `docker compose up -d` から直接始められます。最新版 AMI のドライバが CUDA 12.8 に対応していることをリリースノートで確認して選択してください。
+**Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04)** — G6e をサポート対象に含みます。§1.1 の必須ソフトウェア(NVIDIA Driver・**Docker・NVIDIA Container Toolkit**)が導入済みのため、Toolkit の個別導入は不要で、[02-provisioning/node-a/](../02-provisioning/node-a/) の `docker compose up -d` から直接始められます。最新版 AMI のドライバが CUDA 12.8 に対応していることをリリースノートで確認して選択してください。
 
 - 「Base」が付かない DLAMI(PyTorch 入り等)はフレームワーク同梱で大きいだけなので不要。vLLM はコンテナ(または venv)で導入するため Base で十分
 - カーネルの自動更新はドライバ互換性を壊すことがあるため、AMI のガイダンスに従いセキュリティパッチ以外のカーネル更新は避ける
@@ -81,7 +81,7 @@ GPU インスタンスの選定は、次の順で絞り込みます。
 
 - m7i/r7i(Intel)は例示です。同世代の AMD(m7a/r7a)は同スペックでやや安価なので、リージョンの提供状況と単価で選んで構いません
 - **ARM(Graviton, m7g/r7g)は避けてください**。本構成のコンテナイメージ(TEI CPU 版等)は x86_64 前提で検証しているため
-- AMI は **Ubuntu Server 24.04 LTS(Canonical 公式、素の AMI)**。GPU がないので Deep Learning AMI は不要で、Docker は手順書 [deployment-guide.md](deployment-guide.md) §0.1 で導入します
+- AMI は **Ubuntu Server 24.04 LTS(Canonical 公式、素の AMI)**。GPU がないので Deep Learning AMI は不要で、Docker は手順書 [deployment-guide.md](../03-deployment/deployment-guide.md) §0.1 で導入します
 
 ## 3. ストレージ(EBS)
 
@@ -103,7 +103,7 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 | WebUI(案1/案1b/案2/案3) | 利用者ネットワーク(社内 CIDR 等) | Node B | 8000(案1) / 80・443(案1b/案2/案3) |
 | SSH 管理 | 管理端末の CIDR(または SSM Session Manager を使い閉じる) | 両ノード | 22/tcp |
 
-- vLLM の `--api-key` は SG があっても設定する(多層防御。[deploy/node-a/.env.example](../deploy/node-a/.env.example) の `VLLM_API_KEY`)
+- vLLM の `--api-key` は SG があっても設定する(多層防御。[02-provisioning/node-a/.env.example](../02-provisioning/node-a/.env.example) の `VLLM_API_KEY`)
 - Node B の docker-compose がデバッグ用に開けるポート(6333/8081/8082/9200 等)は `127.0.0.1` バインド済みのため、SG 側の許可は不要
 
 ## 5. 料金目安(月額)
@@ -140,7 +140,7 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 | Elastic IP(NAT 用・一時) | 割当中のみ | 約 0.8 円/h(NAT 稼働中のみ) |
 
 - **EBS が唯一の常時課金項目**(インスタンスを停止しても消えない)。推奨構成の EBS 合算: 案1/案1b/案2 = Node A 200GB + Node B 100GB ≒ **約 4,600 円/月**、案3 = 200GB + 200GB ≒ **約 6,200 円/月**。
-- **NAT Gateway + EIP は一時利用**。例: セットアップ 1 回(約 10h 稼働・モデル/イメージ 100GB ダウンロード)≒ **約 1,100 円/回**。使い終えたら削除して停止する([aws-provisioning.md](aws-provisioning.md) §2.2)。
+- **NAT Gateway + EIP は一時利用**。例: セットアップ 1 回(約 10h 稼働・モデル/イメージ 100GB ダウンロード)≒ **約 1,100 円/回**。使い終えたら削除して停止する([aws-provisioning.md](../02-provisioning/aws-provisioning.md) §2.2)。
 - VPC・IGW・EICE 等は無料。データ転送(外向き egress)は別途だが、定常運用は閉域(IGW/NAT なし)のため EC2 起点の egress はほぼ発生しない。
 
 **留意点**
@@ -153,6 +153,6 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 ## 6. 参考情報
 
 - [Amazon EC2 G6e インスタンス](https://aws.amazon.com/ec2/instance-types/g6e/)(L40S 48GB/GPU、最大 8 GPU)
-- [EC2 高速コンピューティングインスタンス仕様](https://docs.aws.amazon.com/ec2/latest/instancetypes/ac.html)
-- [Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04)](https://docs.aws.amazon.com/dlami/latest/devguide/aws-deep-learning-base-gpu-ami-ubuntu-24-04.html)(ドライバ / CUDA / Docker / NVIDIA Container Toolkit 同梱、G6e 対応)
+- [EC2 高速コンピューティングインスタンス仕様](https://docs.aws.amazon.com/ec2/la05-evaluation/instancetypes/ac.html)
+- [Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04)](https://docs.aws.amazon.com/dlami/la05-evaluation/devguide/aws-deep-learning-base-gpu-ami-ubuntu-24-04.html)(ドライバ / CUDA / Docker / NVIDIA Container Toolkit 同梱、G6e 対応)
 - [Amazon VPC 料金](https://aws.amazon.com/vpc/pricing/)(NAT Gateway・パブリック IPv4 の単価)/ [Amazon EBS 料金](https://aws.amazon.com/ebs/pricing/)

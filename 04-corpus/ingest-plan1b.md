@@ -4,7 +4,7 @@
 
 ## 前提
 
-- [Node B構築手順](../deployment-guide.md) §1bに従い Open WebUI v0.9.6を起動済み
+- [Node B構築手順](../03-deployment/deployment-guide.md) §1bに従い Open WebUI v0.9.6を起動済み
 - 案1bには `documents/` と `ingest.py` がないため、`prepare_stage.sh` は使用しない
 - Admin Panelで `laws` / `whitepaper` / `ipa` / `livedoor` / `wikipedia` のグループを作成する
 - Workspace > Knowledgeで同名の private Knowledgeを作成し、対応グループへ read権限を付与する

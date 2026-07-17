@@ -2,7 +2,7 @@ import importlib.util
 import pathlib
 import unittest
 
-MODULE_PATH = pathlib.Path(__file__).parents[2] / "deploy" / "plan3" / "rag-api" / "query_rewrite.py"
+MODULE_PATH = pathlib.Path(__file__).parents[1] / "query_rewrite.py"
 spec = importlib.util.spec_from_file_location("query_rewrite", MODULE_PATH)
 query_rewrite = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(query_rewrite)

@@ -38,7 +38,7 @@
 ### 4.1 自動評価
 
 ```bash
-cd test/level2 && python run_level2.py --generate-only
+cd 05-evaluation/level2 && python run_level2.py --generate-only
 # 「該当なし正答率 (TC07)」と、不合格ケースの回答冒頭が表示される
 ```
 

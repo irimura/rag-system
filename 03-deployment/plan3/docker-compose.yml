@@ -1,5 +1,5 @@
 # 案3: ハイブリッド検索・本格構成(Node B)
-# 構築手順: docs/deployment-guide.md
+# 構築手順: 03-deployment/deployment-guide.md
 # 事前に必須: sudo sysctl -w vm.max_map_count=262144(OpenSearch 要件)
 # 外部公開は nginx(80/443)のみ。他は 127.0.0.1 バインド
 services:

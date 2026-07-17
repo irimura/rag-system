@@ -5,7 +5,7 @@
 ## 前提
 
 - [事前準備](prerequisites.md) と [ダウンロード手順](download.md) を完了している
-- [Node B構築手順](../deployment-guide.md) §2に従い `.env`、TLS証明書、`auth/groups.json` を準備済み
+- [Node B構築手順](../03-deployment/deployment-guide.md) §2に従い `.env`、TLS証明書、`auth/groups.json` を準備済み
 - `groups.json` に固定5グループと検証ユーザーの所属を登録済み
 - TEI Embed、Qdrant、rag-apiが起動し、health/readyzが成功する
 - ingestは `force_recreate=True` で単一 collectionを削除・再作成する
@@ -15,12 +15,12 @@
 ## 段階1(動作確認)
 
 ```bash
-cd ${repo_dir}/deploy/plan2
+cd ${repo_dir}/03-deployment/plan2
 vim .env
 vim auth/groups.json
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh smoke 2 copy
-cd deploy/plan2
+bash 04-corpus/scripts/prepare_stage.sh smoke 2 copy
+cd 03-deployment/plan2
 docker compose up -d --build
 curl http://localhost:8081/health && curl http://localhost:6333/readyz && curl http://localhost:8000/health
 docker compose --profile ingest run --rm ingest
@@ -30,8 +30,8 @@ docker compose --profile ingest run --rm ingest
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh accuracy 2 copy
-cd deploy/plan2
+bash 04-corpus/scripts/prepare_stage.sh accuracy 2 copy
+cd 03-deployment/plan2
 docker compose --profile ingest run --rm ingest
 ```
 
@@ -41,8 +41,8 @@ docker compose --profile ingest run --rm ingest
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh load 2 copy
-cd deploy/plan2
+bash 04-corpus/scripts/prepare_stage.sh load 2 copy
+cd 03-deployment/plan2
 docker compose --profile ingest run --rm ingest
 ```
 

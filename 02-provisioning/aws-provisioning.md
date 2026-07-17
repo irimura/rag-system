@@ -3,8 +3,8 @@
 AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化する手順書です。
 パラメータ(Instance Type 等)は先頭の変数ブロックで指定し、各手順は変数を参照します。
 
-- スペック・AMI・料金の根拠: [node-specs.md](node-specs.md)
-- OS 内のセットアップ(Docker・vLLM・各案の構築): [deployment-guide.md](deployment-guide.md) / [deploy/](../deploy/)
+- スペック・AMI・料金の根拠: [node-specs.md](../01-design/node-specs.md)
+- OS 内のセットアップ(Docker・vLLM・各案の構築): [deployment-guide.md](../03-deployment/deployment-guide.md) / [03-deployment/](../03-deployment/)
 
 ## 対象ノード
 
@@ -212,7 +212,7 @@ rm -v user-data-*.sh
 echo "llm-001=${llm_id} app-001=${app1_id} app-001b=${app1b_id} app-002=${app2_id} app-003=${app3_id}"
 ```
 
-この時点ではインターネット未接続(隔離)。シェル接続は §1.4 の EICE で行う(NAT 不要)。パッケージ取得・モデル DL には**インスタンス自身の外向き通信**が要るため、§2 で NAT を作成してからセットアップ([deployment-guide.md](deployment-guide.md))を行う。
+この時点ではインターネット未接続(隔離)。シェル接続は §1.4 の EICE で行う(NAT 不要)。パッケージ取得・モデル DL には**インスタンス自身の外向き通信**が要るため、§2 で NAT を作成してからセットアップ([deployment-guide.md](../03-deployment/deployment-guide.md))を行う。
 
 ### 1.4 EC2 Instance Connect Endpoint(EICE)+ 接続
 
@@ -624,7 +624,7 @@ flowchart LR
 
 1. **§1** ネットワーク・SG・EC2・EICE を作成(この時点は隔離だが EICE で接続可能)
 2. **§2.1** NAT を作成して外向き通信を開通(パッケージ・モデル取得用)
-3. EICE で各ノードへ接続し、[deployment-guide.md](deployment-guide.md) に従いセットアップ(Docker/イメージ/モデル取得)
+3. EICE で各ノードへ接続し、[deployment-guide.md](../03-deployment/deployment-guide.md) に従いセットアップ(Docker/イメージ/モデル取得)
 4. **§3** 各ノードを AMI 化(復旧・複製用のゴールデンイメージ)
 5. 検証用 Keycloak または VPC ピアリングを使う場合は **§2.2** で NAT を削除する。The Internet 上の外部 IdP を使う場合は **§2.3 経路A** として NAT/IGW を維持する
 6. 定常運用。ピアリング/Keycloak 構成は隔離を維持し、Internet IdP 構成は OIDC バックチャネルだけを例外とする。**シェル保守は EICE で随時可能**。Instance Type 変更は **§4**(AMI から別タイプで再作成)
@@ -632,6 +632,6 @@ flowchart LR
 ## 付録: コスト注意
 
 - **NAT Gateway**: 稼働時間 + 処理データ課金。セットアップ専用なら §2.2 で削除する(EIP も解放)。The Internet 上の外部 IdP 用に常設する場合は月約 `$45.26`/730h + 処理料を継続計上する
-- **停止 ≠ 無料**: EC2 停止中も EBS は課金される(料金試算は [node-specs.md](node-specs.md) §5〜6)
+- **停止 ≠ 無料**: EC2 停止中も EBS は課金される(料金試算は [node-specs.md](../01-design/node-specs.md) §5〜6)
 - **AMI/スナップショット**: 世代を貯めると EBS スナップショット課金が積み上がる。不要世代は §5.3 で削除
-- インスタンスタイプの単価・月額は [node-specs.md](node-specs.md) を参照
+- インスタンスタイプの単価・月額は [node-specs.md](../01-design/node-specs.md) を参照

@@ -68,7 +68,7 @@ flowchart LR
 
 ### 3.1 形式(JSONL)
 
-1 行 1 テストケース。サンプルは [eval/golden_dataset.sample.jsonl](../eval/golden_dataset.sample.jsonl) を参照。
+1 行 1 テストケース。サンプルは [05-evaluation/golden_dataset.sample.jsonl](golden_dataset.sample.jsonl) を参照。
 
 | フィールド | 型 | 必須 | 内容 |
 |---|---|---|---|
@@ -90,7 +90,7 @@ flowchart LR
 |---|---|---|
 | **人手作成**(推奨・必須) | 30〜50 件〜 | 実利用者へのヒアリング・過去の問い合わせログから作る。品質が最も高い |
 | **合成生成**(Ragas TestsetGenerator) | +50〜200 件 | コーパスから LLM(vLLM)で質問・正解を自動生成。量を稼ぐ用途。**人手レビューで不良ケースを除去してから使う** |
-| **公開データセット流用** | 別トラック | JSQuAD 等「コーパスと QA が対で揃っている」データセットでパイプライン自体を検証([test-data.md](test-data.md) 参照) |
+| **公開データセット流用** | 別トラック | JSQuAD 等「コーパスと QA が対で揃っている」データセットでパイプライン自体を検証([test-data.md](../04-corpus/corpus-datasets.md) 参照) |
 
 - カテゴリごとに最低 5 件は確保する(1 件だけだと合否がノイズで揺れる)
 - データセットはコーパスのスナップショットとセットで git 管理し、バージョンを固定する
@@ -113,11 +113,11 @@ flowchart LR
 | TC10 | 長文・要約型 | 「X 章の要点をまとめて」 | 広い検索、生成の要約品質 |
 
 - **TC07(該当なし)は必ず全体の 1〜2 割入れる。** これを入れないと「何にでも答える=ハルシネーションする」システムが高得点になってしまう
-- 日本語固有の観点(表記ゆれ・漢語/和語言い換え)は TC03/TC04 に含めて作る([rag-components.md](rag-components.md) の各節参照)
+- 日本語固有の観点(表記ゆれ・漢語/和語言い換え)は TC03/TC04 に含めて作る([rag-components.md](../06-tuning/rag-components.md) の各節参照)
 
 ## 5. 実行手順
 
-> 本節は手順の設計を示す。**実際に手を動かす際の手順書とスクリプトは [test/](../test/) を参照**(レベル1: [test/level1/procedure.md](../test/level1/procedure.md)、レベル2: [test/level2/procedure.md](../test/level2/procedure.md)、観点別: [test/cases/](../test/cases/))。
+> 本節は手順の設計を示す。**実際に手を動かす際の手順書とスクリプトは [05-evaluation/](./) を参照**(レベル1: [05-evaluation/level1/procedure.md](level1/procedure.md)、レベル2: [05-evaluation/level2/procedure.md](level2/procedure.md)、観点別: [05-evaluation/cases/](cases/))。
 
 ### 5.1 環境の固定(再現性の確保)
 
@@ -165,7 +165,7 @@ Ragas の judge には vLLM(OpenAI 互換)をそのまま指定できるため�
 
 ## 7. 回帰テスト運用
 
-構成変更のたびに同一データセットで再計測し、以下の形式で記録する(`eval/experiments.md` 等)。
+構成変更のたびに同一データセットで再計測し、以下の形式で記録する(`05-evaluation/experiments.md` 等)。
 
 | # | 日付 | 構成の変更点 | HR@4 | EvRecall@4 | MRR@4 | Faith. | Correct. | TC07 | 備考 |
 |---|---|---|---|---|---|---|---|---|---|

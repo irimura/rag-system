@@ -1,6 +1,6 @@
 # コーパスのダウンロードと前処理
 
-> 以降のコマンド例中の `${repo_dir}`、`${downloaded_pdf}`、`${downloaded_archive}`、`${pdf_file}`、`${sample_article}` は、実行前に環境の絶対パスまたはファイル名へ置き換えてください。先に [事前準備](prerequisites.md) を完了し、`scripts/corpus/corpus.env` を作成してください。
+> 以降のコマンド例中の `${repo_dir}`、`${downloaded_pdf}`、`${downloaded_archive}`、`${pdf_file}`、`${sample_article}` は、実行前に環境の絶対パスまたはファイル名へ置き換えてください。先に [事前準備](prerequisites.md) を完了し、`04-corpus/scripts/corpus.env` を作成してください。
 
 取得物は `${CORPUS_DIR}/raw/`、前処理済み成果物は `${CORPUS_DIR}/processed/` に保存します。既存の非空ファイルはスキップするため、同じ設定で再実行できます。
 
@@ -8,7 +8,7 @@
 
 ```bash
 cd ${repo_dir}
-set -a && source scripts/corpus/corpus.env && set +a
+set -a && source 04-corpus/scripts/corpus.env && set +a
 ```
 
 ## 1. e-Gov法令
@@ -17,7 +17,7 @@ set -a && source scripts/corpus/corpus.env && set +a
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/download_egov_laws.sh
+bash 04-corpus/scripts/download_egov_laws.sh
 ```
 
 既定は個人情報保護法、労働基準法を含む10法令です。対象は `corpus.env` の `EGOV_LAW_IDS` で差し替えます。
@@ -29,7 +29,7 @@ e-Gov法令検索で対象法令を開き、「ダウンロード > XML」から
 ### 前処理
 
 ```bash
-python3 scripts/corpus/preprocess_egov.py
+python3 04-corpus/scripts/preprocess_egov.py
 ```
 
 `processed/laws/<法令ID>.md` に法令名、法令番号、法令ID、出典、章・節・条・項を出力します。条見出しは `### 第一条` 等を保持し、TC01/TC03の条番号検索で一致箇所を確認できる構造にします。
@@ -52,7 +52,7 @@ rg -n '^### 第(一|二|三)条' ${CORPUS_DIR}/processed/laws
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/download_soumu_whitepaper.sh
+bash 04-corpus/scripts/download_soumu_whitepaper.sh
 ```
 
 年度ごとに URL/分冊構成が変わり、`SOUMU_WHITEPAPER_URL` が空の場合はスクリプトが手動取得先と保存先を表示して終了します。
@@ -67,7 +67,7 @@ cp -v ${downloaded_pdf} ${CORPUS_DIR}/raw/whitepaper/information-communications-
 
 ### 前処理
 
-案1/2/3の現行 Loader は `PyPDFLoader` で PDF を直接読み込むため、通常は形式変換しません。OCRが必要なスキャン PDF や段組み崩れがある場合は、[構成要素解説](../rag-components.md) §1 に従って別 Loader/OCR の採用を検討し、原本を残したまま検証用出力を分けます。
+案1/2/3の現行 Loader は `PyPDFLoader` で PDF を直接読み込むため、通常は形式変換しません。OCRが必要なスキャン PDF や段組み崩れがある場合は、[構成要素解説](../06-tuning/rag-components.md) §1 に従って別 Loader/OCR の採用を検討し、原本を残したまま検証用出力を分けます。
 
 ### 検収
 
@@ -85,7 +85,7 @@ du -h ${pdf_file}
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/download_ipa.sh
+bash 04-corpus/scripts/download_ipa.sh
 ```
 
 既定URLは情報セキュリティ白書2025全章版と中小企業の情報セキュリティ対策ガイドライン第4.0版です。別年度/資料は `IPA_PDF_URLS` と `IPA_SOURCE_PAGE_URLS` を同時に更新します。
@@ -118,7 +118,7 @@ pdftotext -f 1 -l 3 ${pdf_file} - | sed -n '1,120p'
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/download_livedoor.sh
+bash 04-corpus/scripts/download_livedoor.sh
 ```
 
 スクリプトは CC BY-ND 2.1 JPの改変禁止・社内評価限定を実行時に表示し、`ldcc-20140209.tar.gz` を取得して原文のまま展開します。
@@ -155,7 +155,7 @@ du -sh ${CORPUS_DIR}/raw/livedoor/text
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/download_wikipedia_dump.sh --mode partial
+bash 04-corpus/scripts/download_wikipedia_dump.sh --mode partial
 ```
 
 全件は `--mode full` を指定します。`WIKIPEDIA_DUMP_DATE=latest` は実行時点の最新版を指すため、再現性が必要な評価では `YYYYMMDD` を固定します。
@@ -167,13 +167,13 @@ Wikimedia Downloads の jawiki対象日ディレクトリから `pages-articles.
 ### 前処理
 
 ```bash
-python3 scripts/corpus/preprocess_wikipedia.py --max-articles 10000
+python3 04-corpus/scripts/preprocess_wikipedia.py --max-articles 10000
 ```
 
 カテゴリを完全一致で絞り込む場合は `--category` を複数指定します。
 
 ```bash
-python3 scripts/corpus/preprocess_wikipedia.py --max-articles 50000 --category 情報技術 --category コンピュータ
+python3 04-corpus/scripts/preprocess_wikipedia.py --max-articles 50000 --category 情報技術 --category コンピュータ
 ```
 
 全件は `--max-articles 0` です。出力済み記事IDはスキップします。抽出条件を変えて厳密に別集合を作る場合は、別の `--output-dir` を指定して混在を避けます。

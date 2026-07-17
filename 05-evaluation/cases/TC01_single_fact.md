@@ -30,7 +30,7 @@ RAG の最も基本的な動作を確認する。**TC01 は全観点のベース
 ### 4.1 自動評価
 
 ```bash
-cd test/level1 && python run_level1.py
+cd 05-evaluation/level1 && python run_level1.py
 # 「カテゴリ別 HitRate@4」の TC01_single_fact 行を確認
 ```
 
@@ -63,4 +63,4 @@ python run_level1.py --case TC01-001 --verbose
 
 ## 7. 記録
 
-実施日 / 構成(実験 ID)/ 判定表 / 気づきを `eval/experiments.md` に記録する。
+実施日 / 構成(実験 ID)/ 判定表 / 気づきを `05-evaluation/experiments.md` に記録する。

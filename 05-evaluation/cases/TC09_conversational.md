@@ -41,7 +41,7 @@
 ### 4.1 自動評価
 
 ```bash
-cd test/level2 && python run_level2.py
+cd 05-evaluation/level2 && python run_level2.py
 # run_level2.py は history を質問に前置する簡易書き換えで検索する(サンプル実装)
 # TC09 カテゴリの生成品質を確認する
 ```
@@ -71,7 +71,7 @@ WebUI(Open WebUI)で**実際の会話として**実行する:
 ## 6. 不合格時の切り分け
 
 1. rag-api のログで検索に使われたクエリ文字列を確認する(指示語のままなら書き換えが未実装/未動作)
-2. 改善の定石: 検索前に LLM で「履歴 + 最新質問 → 独立した質問」への書き換えを追加する(rag-api の `chat_completions` で `req.messages` の履歴を使う。[rag-components.md §5](../../docs/rag-components.md) の history-aware retriever)
+2. 改善の定石: 検索前に LLM で「履歴 + 最新質問 → 独立した質問」への書き換えを追加する(rag-api の `chat_completions` で `req.messages` の履歴を使う。[rag-components.md §5](../../06-tuning/rag-components.md) の history-aware retriever)
 3. 書き換え後も外す場合は、書き換えプロンプトに「直近の話題を優先」と明示する
 
 ## 7. 記録

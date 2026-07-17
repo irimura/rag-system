@@ -18,7 +18,7 @@
 `symlink` はディスク節約用の任意オプションです。作成されるリンクは `${CORPUS_DIR}` 配下への絶対リンクのため、標準 compose の `./documents:/data/documents:ro` だけでは ingestコンテナから参照できません。使用する場合は `${CORPUS_DIR}` を移動しない固定パスに置き、`docker compose` を実行するシェルで次を実行します。
 
 ```bash
-set -a && source ${repo_dir}/scripts/corpus/corpus.env && set +a
+set -a && source ${repo_dir}/04-corpus/scripts/corpus.env && set +a
 ```
 
 さらに、対象案の `docker-compose.yml` の ingestサービスへ次の2行目を追加し、ホストとコンテナで同じ絶対パスをマウントします。
@@ -33,7 +33,7 @@ volumes:
 
 ```bash
 df -h ${repo_dir}
-du -sh ${repo_dir}/deploy/plan*/documents ${HOME}/rag-corpus
+du -sh ${repo_dir}/03-deployment/plan*/documents ${HOME}/rag-corpus
 ```
 
 ## 2. Python venv と依存パッケージ
@@ -45,22 +45,22 @@ cd ${repo_dir}
 python3 -m venv .venv-corpus
 source .venv-corpus/bin/activate
 python3 -m pip install --upgrade pip
-python3 -m pip install -r scripts/corpus/requirements.txt
-test -f scripts/corpus/corpus.env || cp -v scripts/corpus/corpus.env.example scripts/corpus/corpus.env
-vim scripts/corpus/corpus.env
+python3 -m pip install -r 04-corpus/scripts/requirements.txt
+test -f 04-corpus/scripts/corpus.env || cp -v 04-corpus/scripts/corpus.env.example 04-corpus/scripts/corpus.env
+vim 04-corpus/scripts/corpus.env
 ```
 
 WikiExtractorは `requirements.txt` の固定版を使います。Node Bでの初回実行前に `python3 -m wikiextractor.WikiExtractor --version` を確認してください。
 
 ## 3. ネットワーク要件と隔離運用
 
-[AWS構築手順](../aws-provisioning.md) §2 の一時 NAT + IGW を作成し、次の取得作業だけ Node B の外向き通信を許可します。
+[AWS構築手順](../02-provisioning/aws-provisioning.md) §2 の一時 NAT + IGW を作成し、次の取得作業だけ Node B の外向き通信を許可します。
 
 - Ubuntuパッケージ、Python依存、コンテナイメージ、Embedding/Rerankモデルの初回取得
 - e-Gov、総務省、IPA、ロンウイット、Wikimediaからのコーパス取得
 - URL、ライセンス、配布条件の最終確認
 
-取得、前処理、コンテナ起動確認、必要なら AMI 化まで完了したら、外部 IdP 用の常設 NAT が不要な構成では [AWS構築手順](../aws-provisioning.md) §2.2 に従って NAT、EIP、一時サブネット、IGWを削除します。EICEは NAT/IGWを経由しないため、隔離後も保守接続できます。
+取得、前処理、コンテナ起動確認、必要なら AMI 化まで完了したら、外部 IdP 用の常設 NAT が不要な構成では [AWS構築手順](../02-provisioning/aws-provisioning.md) §2.2 に従って NAT、EIP、一時サブネット、IGWを削除します。EICEは NAT/IGWを経由しないため、隔離後も保守接続できます。
 
 ## 4. ライセンス確認チェックリスト
 
@@ -84,22 +84,22 @@ WikiExtractorは `requirements.txt` の固定版を使います。Node Bでの�
 | `livedoor` | livedoor原文テキスト | 精度評価 |
 | `wikipedia` | jawiki抽出テキスト | 負荷・規模試験 |
 
-[OIDC認証・グループ認可設計](../auth-oidc.md) §9.1では、`documents/<group>/...` の第1階層が案2/3の `metadata.group` と OpenSearch DLS の認可キーです。したがって、コーパス種別の5値を案2/3の `auth/groups.json` の `groups` に登録し、検証ユーザーへ必要な組み合わせを割り当てます。空所属、未知グループ、`documents/` 直下ファイルは fail closed です。
+[OIDC認証・グループ認可設計](../01-design/auth-oidc.md) §9.1では、`documents/<group>/...` の第1階層が案2/3の `metadata.group` と OpenSearch DLS の認可キーです。したがって、コーパス種別の5値を案2/3の `auth/groups.json` の `groups` に登録し、検証ユーザーへ必要な組み合わせを割り当てます。空所属、未知グループ、`documents/` 直下ファイルは fail closed です。
 
 ```bash
-cd ${repo_dir}/deploy/plan2
+cd ${repo_dir}/03-deployment/plan2
 test -f auth/groups.json || cp -v auth/groups.example.json auth/groups.json
 vim auth/groups.json
 ```
 
-案3も同様に `deploy/plan3/auth/groups.json` を編集します。精度評価用の利用者には `laws` / `whitepaper` / `ipa` / `livedoor`、負荷試験用の利用者には必要に応じて `wikipedia` を追加します。越境試験用には単一グループだけを持つ利用者も残します。
+案3も同様に `03-deployment/plan3/auth/groups.json` を編集します。精度評価用の利用者には `laws` / `whitepaper` / `ipa` / `livedoor`、負荷試験用の利用者には必要に応じて `wikipedia` を追加します。越境試験用には単一グループだけを持つ利用者も残します。
 
 案1bでは Open WebUI の Admin Panel で同名グループを作成し、グループごとに private Knowledge の read 権限を付与します。案1は現行サンプルにグループ認可がありませんが、案2/3へ移行できるよう同じディレクトリ構成を維持します。
 
 配置前に直下ファイルがないことを確認します。
 
 ```bash
-find ${repo_dir}/deploy/plan2/documents -maxdepth 1 -type f ! -name '.gitkeep' -print
+find ${repo_dir}/03-deployment/plan2/documents -maxdepth 1 -type f ! -name '.gitkeep' -print
 ```
 
 1件でも表示された場合は ingest を実行せず、5グループのいずれかへ移動します。
@@ -109,6 +109,6 @@ find ${repo_dir}/deploy/plan2/documents -maxdepth 1 -type f ! -name '.gitkeep' -
 - [ ] 対象案の `.env` と必要な `auth/groups.json` を準備した
 - [ ] Node Bの空き容量が対象段階の目安を満たす
 - [ ] 取得時だけ NAT/IGWを開通し、終了後の削除判断を決めた
-- [ ] `scripts/corpus/corpus.env` の年度、URL、法令ID、Wikipedia条件を確認した
+- [ ] `04-corpus/scripts/corpus.env` の年度、URL、法令ID、Wikipedia条件を確認した
 - [ ] livedoorの社内評価限定・改変禁止を作業者へ周知した
 - [ ] 全量再構築中の検索停止/性能低下を許容できる時間帯を確保した

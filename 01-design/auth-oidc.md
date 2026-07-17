@@ -106,7 +106,7 @@ flowchart LR
     WEBUI -.->|"経路B: VPC ピアリング<br/>バックチャネル HTTPS"| VPC_IDP
 ```
 
-バックチャネル経路は次の2方式を併記します。具体的な AWS 手順は [AWS 構築手順](aws-provisioning.md) §2.3 を参照してください。
+バックチャネル経路は次の2方式を併記します。具体的な AWS 手順は [AWS 構築手順](../02-provisioning/aws-provisioning.md) §2.3 を参照してください。
 
 | 経路 | 対象 IdP | Internet 経由 | コスト | 隔離方針との整合 | 主な作業 |
 |---|---|---:|---|---|---|
@@ -261,7 +261,7 @@ flowchart LR
     L8080 -->|"LocalForward :8180"| KEYCLOAK
 ```
 
-上の2図は、検証用 Keycloak とデバッグ用の `http://localhost:3000` を使う経路です。案1b/2/3 で HTTPS 公開名を使う標準経路では、Nginx の 443 へ LocalForward し、`https://${node_b_hostname}/oauth/oidc/callback` を Keycloak の `redirectUris` へ明示追加します。詳細は [Node B 構築手順](deployment-guide.md) §3.2 を参照してください。
+上の2図は、検証用 Keycloak とデバッグ用の `http://localhost:3000` を使う経路です。案1b/2/3 で HTTPS 公開名を使う標準経路では、Nginx の 443 へ LocalForward し、`https://${node_b_hostname}/oauth/oidc/callback` を Keycloak の `redirectUris` へ明示追加します。詳細は [Node B 構築手順](../03-deployment/deployment-guide.md) §3.2 を参照してください。
 
 issuer と `redirect_uri` はポートを含む URL の完全一致が必要です。各 LocalForward のローカルポートを変更する場合は、ブラウザから見える URL、`KC_HOSTNAME`、IdP に登録する `redirect_uri` の対応するポートも揃えて変更します。
 
@@ -351,9 +351,9 @@ Keycloak の redirect URI wildcard は URI 末尾でだけ使用でき、ホス�
 - [Open WebUI: Knowledge](https://docs.openwebui.com/features/workspace/knowledge/)
 - [Chainlit: Authentication](https://docs.chainlit.io/authentication/overview)
 - [Chainlit: OAuth](https://docs.chainlit.io/authentication/oauth)
-- [OpenSearch: OpenID Connect](https://docs.opensearch.org/latest/security/authentication-backends/openid-connect/)
-- [OpenSearch: Document-level security](https://docs.opensearch.org/latest/security/access-control/document-level-security/)
-- [OpenSearch: Audit logs](https://docs.opensearch.org/latest/security/audit-logs/index/)
+- [OpenSearch: OpenID Connect](https://docs.opensearch.org/la05-evaluation/security/authentication-backends/openid-connect/)
+- [OpenSearch: Document-level security](https://docs.opensearch.org/la05-evaluation/security/access-control/document-level-security/)
+- [OpenSearch: Audit logs](https://docs.opensearch.org/la05-evaluation/security/audit-logs/index/)
 - [Keycloak: Running Keycloak in a container](https://www.keycloak.org/server/containers)
 - [Keycloak: Configuring the hostname](https://www.keycloak.org/server/hostname)
 - [RFC 8252: OAuth 2.0 for Native Apps](https://www.rfc-editor.org/rfc/rfc8252)

@@ -1,7 +1,7 @@
 # TCxx: (観点名) — ケース手順書
 
 > このテンプレートを複製して TC02〜TC06 / TC08 / TC10 の手順書を作成する。
-> 観点の定義は [evaluation-spec.md](../../docs/evaluation-spec.md) §4 を参照。
+> 観点の定義は [evaluation-spec.md](./../evaluation-spec.md) §4 を参照。
 
 | 項目 | 内容 |
 |---|---|
@@ -30,14 +30,14 @@
 ### 4.1 自動評価(レベル1/レベル2 のカテゴリ別スコア)
 
 ```bash
-cd test/level1 && python run_level1.py            # カテゴリ別 HitRate を確認
+cd 05-evaluation/level1 && python run_level1.py            # カテゴリ別 HitRate を確認
 cd ../level2 && python run_level2.py              # カテゴリ別 生成品質を確認
 ```
 
 ### 4.2 個別ケースの手動確認
 
 ```bash
-cd test/level1 && python run_level1.py --case TCxx-001 --verbose
+cd 05-evaluation/level1 && python run_level1.py --case TCxx-001 --verbose
 ```
 
 1. WebUI(Open WebUI / Chainlit)を開く
@@ -61,4 +61,4 @@ cd test/level1 && python run_level1.py --case TCxx-001 --verbose
 
 ## 7. 記録
 
-- 実施日 / 実施者 / 構成(実験 ID) / 各ケースの判定 / 気づき を `eval/experiments.md` または課題管理に記録する
+- 実施日 / 実施者 / 構成(実験 ID) / 各ケースの判定 / 気づき を `05-evaluation/experiments.md` または課題管理に記録する

@@ -1,13 +1,13 @@
 # Node B 構築手順書(全案)
 
-[deploy/](../deploy/) 配下の Dockerfile / docker-compose.yml / パラメータファイルを使って、アプリ+データノード(Node B)を構築する手順です。
+[03-deployment/](./) 配下の Dockerfile / docker-compose.yml / パラメータファイルを使って、アプリ+データノード(Node B)を構築する手順です。
 
 | 案 | 構築ファイル | 公開ポート | 主なパラメータファイル |
 |---|---|---|---|
-| 案1 | [deploy/plan1/](../deploy/plan1/) | 8000(Chainlit) | `.env` |
-| 案1b | [deploy/plan1b/](../deploy/plan1b/) | 80/443(Nginx) | `.env`、`nginx/conf.d/rag.conf` |
-| 案2 | [deploy/plan2/](../deploy/plan2/) | 80/443(Nginx) | `.env`、`nginx/conf.d/rag.conf` |
-| 案3 | [deploy/plan3/](../deploy/plan3/) | 80/443(Nginx) | `.env`、`nginx/conf.d/rag.conf`、`opensearch/index-mapping.json` |
+| 案1 | [03-deployment/plan1/](plan1/) | 8000(Chainlit) | `.env` |
+| 案1b | [03-deployment/plan1b/](plan1b/) | 80/443(Nginx) | `.env`、`nginx/conf.d/rag.conf` |
+| 案2 | [03-deployment/plan2/](plan2/) | 80/443(Nginx) | `.env`、`nginx/conf.d/rag.conf` |
+| 案3 | [03-deployment/plan3/](plan3/) | 80/443(Nginx) | `.env`、`nginx/conf.d/rag.conf`、`opensearch/index-mapping.json` |
 
 > デバッグ用ポート(Open WebUI 3000、Qdrant 6333、TEI 8081/8082、rag-api 8000、OpenSearch 9200)は `127.0.0.1` バインドで外部非公開。Node A(vLLM)には一切手を入れません。
 
@@ -17,8 +17,8 @@
 
 ## 0. 前提条件
 
-- Node B: Ubuntu Server 24.04 LTS(RAM 目安 — 案1/案1b: 8GB〜 / 案2: 16GB〜 / 案3: 32GB〜)。AWS EC2 で構築する場合の Instance Type / AMI 選定は [node-specs.md](node-specs.md) を参照
-- Node A で vLLM が **OpenAI 互換エンドポイントとしてサービス化済み**で、Node B から HTTP 到達できること(未了の場合は先に [deploy/node-a/](../deploy/node-a/) の compose または systemd unit で `vllm serve` を起動する。スペック・AMI は [node-specs.md](node-specs.md) §1)
+- Node B: Ubuntu Server 24.04 LTS(RAM 目安 — 案1/案1b: 8GB〜 / 案2: 16GB〜 / 案3: 32GB〜)。AWS EC2 で構築する場合の Instance Type / AMI 選定は [node-specs.md](../01-design/node-specs.md) を参照
+- Node A で vLLM が **OpenAI 互換エンドポイントとしてサービス化済み**で、Node B から HTTP 到達できること(未了の場合は先に [02-provisioning/node-a/](../02-provisioning/node-a/) の compose または systemd unit で `vllm serve` を起動する。スペック・AMI は [node-specs.md](../01-design/node-specs.md) §1)
 - インターネット接続(イメージ・モデルの初回ダウンロードに必要)
 
 ### 0.1 Docker のインストール(Node B)
@@ -35,13 +35,13 @@ docker version && docker compose version
 ```bash
 curl http://${node_a}:8080/v1/models -H "Authorization: Bearer ${vllm_api_key}"
 # vLLM のモデル一覧(JSON)が返れば OK。返らない場合は Node A 側の
-# サービス化(deploy/node-a/)と FW(8080/tcp が Node B から許可)を確認する
+# サービス化(02-provisioning/node-a/)と FW(8080/tcp が Node B から許可)を確認する
 ```
 
 ### 0.3 リポジトリの配置と共通設定
 
 ```bash
-git clone ${repo_url} && cd rag-system/deploy/plan${n}
+git clone ${repo_url} && cd rag-system/03-deployment/plan${n}
 cp -v .env.example .env
 vim .env    # 最低限 VLLM_BASE_URL / VLLM_API_KEY(案1/2/3 は VLLM_MODEL も)を実環境に合わせる
             # 案1b/2/3 は WEBUI_SECRET_KEY を変更。案3は加えて
@@ -52,7 +52,7 @@ vim .env    # 最低限 VLLM_BASE_URL / VLLM_API_KEY(案1/2/3 は VLLM_MODEL も
 
 取り込みたい文書(PDF / Markdown / テキスト)を `documents/` に配置します。
 
-段階別コーパスの取得・前処理・固定グループへの配置・全量再取り込み・検収は [コーパス取り込み手順](corpus/README.md) を参照してください。案1bの UI/API アップロード手順も同書にまとめています。
+段階別コーパスの取得・前処理・固定グループへの配置・全量再取り込み・検収は [コーパス取り込み手順](../04-corpus/README.md) を参照してください。案1bの UI/API アップロード手順も同書にまとめています。
 
 案1b/2/3 では `.env` のシークレットをすべて別々に `openssl rand -hex 32` で生成します。案2/3 は `FORWARD_USER_INFO_HEADER_JWT_SECRET` と `EVAL_TOKEN`、案3はさらに `OS_GROUP_USER_SECRET` と `KEYCLOAK_DB_PASSWORD` が必要です。
 
@@ -69,7 +69,7 @@ cp -v auth/groups.example.json auth/groups.json
 ## 1. 案1 の構築(Chainlit 単一コンテナ)
 
 ```bash
-cd deploy/plan1
+cd 03-deployment/plan1
 
 # 1) ビルド(CPU 版 PyTorch + sentence-transformers を含むため数分かかる)
 docker compose build
@@ -93,7 +93,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000   # -> 200
 ## 1b. 案1b の構築(Open WebUI 単体)
 
 ```bash
-cd deploy/plan1b
+cd 03-deployment/plan1b
 
 # 1) Nginx の TLS 証明書を配置(検証用は自己署名。本番は社内 CA / Let's Encrypt)
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout nginx/certs/server.key -out nginx/certs/server.crt -subj "/CN=${node_b_hostname}"
@@ -116,7 +116,7 @@ docker compose ps
 ## 2. 案2 の構築(Open WebUI + Qdrant + TEI)
 
 ```bash
-cd deploy/plan2
+cd 03-deployment/plan2
 
 # 1) Nginx の TLS 証明書を配置(検証用は自己署名。本番は社内 CA / Let's Encrypt)
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout nginx/certs/server.key -out nginx/certs/server.crt -subj "/CN=${node_b_hostname}"
@@ -148,7 +148,7 @@ curl http://localhost:8000/v1/chat/completions \
 案3は OpenSearch Security Plugin を有効にし、コンテナ間も TLS と Basic 認証で接続します。検証フェーズでは固定済み OpenSearch イメージが初回起動時に配置するデモ CA / 証明書を使用します。OpenSearch の起動後に公開 CA 証明書だけをホストへ取り出し、`rag-api` / `security-init` / `ingest` へ読み取り専用でマウントします。`security-init` が初期管理者で `rag_api`(検索専用)と `ingest`(インデックス更新用)を冪等作成し、その完了後に各サービスが起動します。
 
 ```bash
-cd deploy/plan3
+cd 03-deployment/plan3
 
 # 1) OpenSearch のカーネル要件(必須。恒久化は /etc/sysctl.d/ に記載)
 sudo sysctl -w vm.max_map_count=262144
@@ -246,7 +246,7 @@ curl --cacert rag-api/certs/root-ca.pem --resolve node-0.example.com:9200:127.0.
 既定はローカル認証だけで完結します。外部 IdP の開通と §3.3 のバックチャネル経路整備が完了する前に、OIDC フロー全体を先行検証するときだけ profile `idp` を起動します。本番の外部 IdP 利用時は起動しません。
 
 ```bash
-cd deploy/plan${n}
+cd 03-deployment/plan${n}
 docker compose --profile idp up -d keycloak
 ```
 
@@ -258,15 +258,15 @@ ssh -N -L 8080:127.0.0.1:8180 ragsys-app-00${n}
 
 `.env` の OIDC ブロックを有効化し、`OPENID_PROVIDER_URL=http://keycloak:8080/realms/rag/.well-known/openid-configuration`、client ID `open-webui`、検証用固定 secret を設定して Open WebUI を再作成します。alice/bob/carol/eva でログインし、issuer と `groups` claim の同期を確認します。
 
-案1b・案2・案3の HTTPS 公開名で検証する場合は、Keycloak 起動前に `deploy/keycloak/realm-rag.json` の `redirectUris` へ `https://${node_b_hostname}/oauth/oidc/callback` を明示追加します。Keycloak はホスト位置の wildcard をサポートしません。
+案1b・案2・案3の HTTPS 公開名で検証する場合は、Keycloak 起動前に `03-deployment/keycloak/realm-rag.json` の `redirectUris` へ `https://${node_b_hostname}/oauth/oidc/callback` を明示追加します。Keycloak はホスト位置の wildcard をサポートしません。
 
 案3の PostgreSQL initdb script は空の `pg-data` を初期化する初回だけ keycloak_app role/DB を作成します。既存 volume には同等の SQL を別途適用します。本番は issuer/client/secret/redirect URI を組織 IdP と安定した HTTPS 名へ差し替え、検証用の secret、ユーザー、初期パスワードは移行しません。
 
 ## 3.3 外部 IdP へ接続する場合
 
-先に [AWS 構築手順](aws-provisioning.md) §2.3 の NAT Gateway 常設または VPC ピアリングで、Node B から IdP の discovery/token endpoint へ HTTPS 接続できるようにします。IdP には client を作成し、`redirect_uri` として `https://${node_b_hostname}/oauth/oidc/callback` を登録します。
+先に [AWS 構築手順](../02-provisioning/aws-provisioning.md) §2.3 の NAT Gateway 常設または VPC ピアリングで、Node B から IdP の discovery/token endpoint へ HTTPS 接続できるようにします。IdP には client を作成し、`redirect_uri` として `https://${node_b_hostname}/oauth/oidc/callback` を登録します。
 
-`redirect_uri` のホスト名はブラウザから解決・到達できればよく、パブリック DNS での解決は技術的には不要です。ただし、IdP が公開 FQDN や組織ドメインの所有権検証を要求する場合があるため、申請時に確認します。Nginx の証明書は公開 CA + DNS-01、または利用端末へ CA を配布した社内 CA を本番候補とします。詳細は [OIDC 導入設計](auth-oidc.md) §5.1 を参照してください。
+`redirect_uri` のホスト名はブラウザから解決・到達できればよく、パブリック DNS での解決は技術的には不要です。ただし、IdP が公開 FQDN や組織ドメインの所有権検証を要求する場合があるため、申請時に確認します。Nginx の証明書は公開 CA + DNS-01、または利用端末へ CA を配布した社内 CA を本番候補とします。詳細は [OIDC 導入設計](../01-design/auth-oidc.md) §5.1 を参照してください。
 
 `.env` の OIDC ブロックを本番 IdP の発行値で設定します。`IDP_HOST` には discovery endpoint のホスト名、client ID/secret には IdP から払い出された値を設定します。
 
@@ -309,7 +309,7 @@ docker compose exec open-webui python -c "import json, os, urllib.request; url=o
 
 | 症状 | 原因と対処 |
 |---|---|
-| OIDC ログインで discovery/token 取得に失敗 | 既定の隔離構成では Open WebUI から外部 IdP へ到達できない。`docker compose exec open-webui` で §3.3 の discovery 確認を実行し、[AWS 構築手順](aws-provisioning.md) §2.3 の NAT/ピアリング、DNS、443 egress、CA バンドルを確認 |
+| OIDC ログインで discovery/token 取得に失敗 | 既定の隔離構成では Open WebUI から外部 IdP へ到達できない。`docker compose exec open-webui` で §3.3 の discovery 確認を実行し、[AWS 構築手順](../02-provisioning/aws-provisioning.md) §2.3 の NAT/ピアリング、DNS、443 egress、CA バンドルを確認 |
 | rag-api が 401 | EVAL_TOKEN または Open WebUI v0.9.6 以降の署名 JWT がない/不正。JWT secret が両サービスで同一か確認 |
 | rag-api が 403 | email が groups.json にない、所属が空、または要求 group が所属外。fail closed のため設定を修正する |
 | rag-api が 503「コレクション/インデックスがありません」 | ingest 未実行。§1〜3 の取り込み手順を実行する |
@@ -329,4 +329,4 @@ docker compose exec open-webui python -c "import json, os, urllib.request; url=o
 5. 認証なしの rag-api アクセスが HTTP 401 で拒否される
 6. dept-a 利用者の検索に dept-b 文書が含まれず、グループ越境が遮断される
 7. (任意) Keycloak OIDC でログインし、グループが同期される
-8. 以降の精度評価は [evaluation-spec.md](evaluation-spec.md) と [TC11](../test/cases/TC11_group_authorization.md) で実施する
+8. 以降の精度評価は [evaluation-spec.md](../05-evaluation/evaluation-spec.md) と [TC11](../05-evaluation/cases/TC11_group_authorization.md) で実施する

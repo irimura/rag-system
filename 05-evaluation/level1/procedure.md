@@ -2,19 +2,19 @@
 
 - 目的: Retriever(+Reranker)が正解根拠を上位に取得できているかを**決定的に**測定する
 - 特徴: LLM 不要・数分で完了・毎回同じ結果。構成変更のたびに必ず実行する
-- 指標の定義と合否基準: [evaluation-spec.md](../../docs/evaluation-spec.md) §2.1 / §6
+- 指標の定義と合否基準: [evaluation-spec.md](./../evaluation-spec.md) §2.1 / §6
 
 ## 1. 前提条件
 
 - [ ] 案2 のサービス群が起動済み(`docker compose ps` で rag-api / qdrant / tei-embed / tei-rerank が Up)
 - [ ] 評価用コーパスの取り込みが完了している(`ingest` 実行済み)
-- [ ] ゴールデンデータセットが用意できている(サンプル: `eval/golden_dataset.sample.jsonl`)
+- [ ] ゴールデンデータセットが用意できている(サンプル: `05-evaluation/golden_dataset.sample.jsonl`)
 - [ ] rag-api の構成パラメータ(チャンクサイズ / Embedding モデル / `RETRIEVE_K` / `RERANK_TOP_N` / `RERANK_THRESHOLD`)を実験管理表に記録した
 
 ## 2. 実行環境の準備(初回のみ、Node B 上)
 
 ```bash
-cd rag-system/test/level1
+cd rag-system/05-evaluation/level1
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
@@ -28,7 +28,7 @@ pip install -r requirements.txt
 python run_level1.py
 
 # 実運用データセットを指定する場合
-GOLDEN_PATH=../../eval/golden_dataset.jsonl python run_level1.py
+GOLDEN_PATH=../golden_dataset.jsonl python run_level1.py
 ```
 
 出力例(このまま実験管理表に転記できる Markdown 行も出力される):
@@ -68,12 +68,12 @@ python run_level1.py --case TC01-001 --verbose
 
 ## 5. 記録
 
-`eval/experiments.md`(なければ作成)に、スクリプトが出力する Markdown 行を追記する。あわせて変更した構成パラメータを備考に残す。
+`05-evaluation/experiments.md`(なければ作成)に、スクリプトが出力する Markdown 行を追記する。あわせて変更した構成パラメータを備考に残す。
 
 ## 6. 他の案への読み替え
 
 | 構成 | 読み替え |
 |---|---|
-| 案1(Chroma 組み込み) | 検索がプロセス内のため HTTP では叩けない。`run_level1.py` の検索部を `langchain_chroma` 直接呼び出しに差し替え、`deploy/plan1/app` の venv 上で実行する |
-| 案1b(Open WebUI 内蔵 RAG) | rag-api の HTTP エンドポイントを持たないため本評価の対象外([test/README.md](../README.md) の共通の前提を参照)。GUI での確認に読み替える |
-| 案3(OpenSearch) | 検索先を `http://localhost:9200/knowledge/_search` に変更し、BM25 + kNN + RRF(`deploy/plan3/rag-api/main.py` と同じロジック)を評価対象にする |
+| 案1(Chroma 組み込み) | 検索がプロセス内のため HTTP では叩けない。`run_level1.py` の検索部を `langchain_chroma` 直接呼び出しに差し替え、`03-deployment/plan1/app` の venv 上で実行する |
+| 案1b(Open WebUI 内蔵 RAG) | rag-api の HTTP エンドポイントを持たないため本評価の対象外([05-evaluation/README.md](../README.md) の共通の前提を参照)。GUI での確認に読み替える |
+| 案3(OpenSearch) | 検索先を `http://localhost:9200/knowledge/_search` に変更し、BM25 + kNN + RRF(`03-deployment/plan3/rag-api/main.py` と同じロジック)を評価対象にする |

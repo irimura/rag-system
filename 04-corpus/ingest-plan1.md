@@ -5,7 +5,7 @@
 ## 前提
 
 - [事前準備](prerequisites.md) と [ダウンロード手順](download.md) を完了している
-- [Node B構築手順](../deployment-guide.md) §1に従い `deploy/plan1/.env` を作成済み
+- [Node B構築手順](../03-deployment/deployment-guide.md) §1に従い `03-deployment/plan1/.env` を作成済み
 - `documents/` 直下には置かず、`laws` / `whitepaper` / `ipa` / `livedoor` / `wikipedia` 配下を使う
 - `ingest.py` は既存 Chroma コレクションを削除し、`documents/` 全体から毎回再構築する
 
@@ -15,8 +15,8 @@
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh smoke 1 copy
-cd deploy/plan1
+bash 04-corpus/scripts/prepare_stage.sh smoke 1 copy
+cd 03-deployment/plan1
 docker compose build
 docker compose --profile ingest run --rm ingest
 docker compose restart chainlit-app
@@ -28,8 +28,8 @@ docker compose restart chainlit-app
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh accuracy 1 copy
-cd deploy/plan1
+bash 04-corpus/scripts/prepare_stage.sh accuracy 1 copy
+cd 03-deployment/plan1
 docker compose --profile ingest run --rm ingest
 docker compose restart chainlit-app
 ```
@@ -40,8 +40,8 @@ docker compose restart chainlit-app
 
 ```bash
 cd ${repo_dir}
-bash scripts/corpus/prepare_stage.sh load 1 copy
-cd deploy/plan1
+bash 04-corpus/scripts/prepare_stage.sh load 1 copy
+cd 03-deployment/plan1
 docker compose --profile ingest run --rm ingest
 docker compose restart chainlit-app
 ```

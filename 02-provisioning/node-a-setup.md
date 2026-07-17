@@ -4,13 +4,13 @@
 
 本書は **Node A(vLLM 推論専用の GPU ノード)単体**を構築・動作確認する手順です。4 ノード一式をまとめて構築する場合は [aws-provisioning.md](aws-provisioning.md)(IaC 的な Bash/CLI 手順)を使ってください。本書はその Node A 部分だけを取り出し、単体構築・単体動作確認をしたい場合の手順です。
 
-- スペックの根拠: [node-specs.md](node-specs.md) §1
+- スペックの根拠: [node-specs.md](../01-design/node-specs.md) §1
 - ネットワーク設計(プライベートサブネット・EICE 接続): [aws-provisioning.md](aws-provisioning.md) 方針・設計 / §1.1・§1.2・§1.4
-- vLLM のサービス化(compose・.env): [deploy/node-a/](../deploy/node-a/)
+- vLLM のサービス化(compose・.env): [02-provisioning/node-a/](node-a/)
 
 ## 1. システム要件
 
-vLLM の確定要件([node-specs.md](node-specs.md) §1.1 と同一)。
+vLLM の確定要件([node-specs.md](../01-design/node-specs.md) §1.1 と同一)。
 
 - CPU: x64
 - GPU: NVIDIA **Ampere 世代以降**
@@ -29,7 +29,7 @@ vLLM の確定要件([node-specs.md](node-specs.md) §1.1 と同一)。
 | vCPU / メモリ | 8 / 64GB(最小: 4 / 32GB) |
 | OS / AMI | **Ubuntu 24.04**・Deep Learning Base OSS Nvidia Driver GPU AMI |
 
-> 24.04 を採用する理由: 利用する vLLM の Docker イメージ(`vllm/vllm-openai`)が Ubuntu 24.04 ベースであり、ホスト OS を合わせておくとカーネル/ドライバの組み合わせ検証が揃うため。DLAMI は NVIDIA Driver・Docker・NVIDIA Container Toolkit が導入済みで、[node-specs.md §1.4](node-specs.md) の判断根拠どおり個別インストールが不要。
+> 24.04 を採用する理由: 利用する vLLM の Docker イメージ(`vllm/vllm-openai`)が Ubuntu 24.04 ベースであり、ホスト OS を合わせておくとカーネル/ドライバの組み合わせ検証が揃うため。DLAMI は NVIDIA Driver・Docker・NVIDIA Container Toolkit が導入済みで、[node-specs.md §1.4](../01-design/node-specs.md) の判断根拠どおり個別インストールが不要。
 
 ## 3. EC2 インスタンス作成
 
@@ -127,7 +127,7 @@ sudo apt upgrade -y
 sudo reboot
 ```
 
-再接続する(§3.3)。以降、ドライバ互換性維持のためセキュリティパッチ以外のカーネル更新は避ける([node-specs.md](node-specs.md) §1.4)。
+再接続する(§3.3)。以降、ドライバ互換性維持のためセキュリティパッチ以外のカーネル更新は避ける([node-specs.md](../01-design/node-specs.md) §1.4)。
 
 ### 5.2 NVIDIA Driver インストール
 
@@ -178,13 +178,13 @@ sudo systemctl restart docker
 
 導入後は §4 の GPU コンテナ動作確認で仕上げる。
 
-## 6. vLLM の起動(deploy/node-a/ を使用)
+## 6. vLLM の起動(02-provisioning/node-a/ を使用)
 
-独自の compose を組む必要はなく、リポジトリ同梱の [deploy/node-a/docker-compose.yml](../deploy/node-a/docker-compose.yml) をそのまま使う(vLLM 自体に同梱の OpenAI 互換サーバ `vllm serve` を Docker 公式イメージ `vllm/vllm-openai` 経由で起動する構成。自前の API ラッパーは不要)。
+独自の compose を組む必要はなく、リポジトリ同梱の [02-provisioning/node-a/docker-compose.yml](node-a/docker-compose.yml) をそのまま使う(vLLM 自体に同梱の OpenAI 互換サーバ `vllm serve` を Docker 公式イメージ `vllm/vllm-openai` 経由で起動する構成。自前の API ラッパーは不要)。
 
 ```bash
 git clone ${repo_url}
-cd rag-system/deploy/node-a
+cd rag-system/02-provisioning/node-a
 
 cp -v .env.example .env
 vim .env   # MODELS_DIR / MODEL_PATH / SERVED_MODEL_NAME / VLLM_API_KEY を設定
@@ -215,7 +215,7 @@ docker compose down
 ## 7. 運用上の注意
 
 - **利用しない時間帯は EC2 を停止する**。手動停止のほか、[aws-provisioning.md §1.5](aws-provisioning.md) の EventBridge Scheduler で毎日 18:00 に自動停止できる
-- **モデル格納用に十分な EBS 容量を確保する**(gp3 200GB〜。サイジングの考え方は [node-specs.md](node-specs.md) §3)
-- **Security Group は最小限のみ開放する**。外部への SSH は開けず EICE 経由に統一し、vLLM API(8080)は Node B の SG からのみ許可する([node-specs.md](node-specs.md) §4)
+- **モデル格納用に十分な EBS 容量を確保する**(gp3 200GB〜。サイジングの考え方は [node-specs.md](../01-design/node-specs.md) §3)
+- **Security Group は最小限のみ開放する**。外部への SSH は開けず EICE 経由に統一し、vLLM API(8080)は Node B の SG からのみ許可する([node-specs.md](../01-design/node-specs.md) §4)
 - **インターネット接続はセットアップ時のみ**。Docker イメージ取得・モデルダウンロードにはインスタンス自身の外向き通信が必要なため、その間だけ [aws-provisioning.md §2](aws-provisioning.md) の NAT Gateway を一時作成し、完了後は削除する(定常運用は隔離)
 - GPU 利用状況(使用率・VRAM 消費量)は `nvidia-smi` で定期的に監視する

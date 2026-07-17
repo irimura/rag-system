@@ -27,7 +27,7 @@ if [[ "${method}" != "copy" && "${method}" != "symlink" ]]; then
 fi
 
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-documents_dir="${REPO_ROOT}/deploy/plan${plan}/documents"
+documents_dir="${REPO_ROOT}/03-deployment/plan${plan}/documents"
 ensure_dir "${documents_dir}"
 
 direct_file="$(find "${documents_dir}" -maxdepth 1 -type f ! -name '.gitkeep' -print -quit)"
@@ -63,7 +63,7 @@ for index in "${!groups[@]}"; do
   source_dir="${sources[${index}]}"
   if [[ ! -d "${source_dir}" ]] || [[ "$(find_corpus_files "${source_dir}" -print -quit)" == "" ]]; then
     echo "必要なコーパスがありません: group=${groups[${index}]} source=${source_dir}" >&2
-    echo "先に scripts/corpus/README.md の取得・前処理手順を完了してください。" >&2
+    echo "先に 04-corpus/scripts/README.md の取得・前処理手順を完了してください。" >&2
     exit 1
   fi
 done
