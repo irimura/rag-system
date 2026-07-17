@@ -4,7 +4,7 @@ AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化す�
 パラメータ(Instance Type 等)は先頭の変数ブロックで指定し、各手順は変数を参照します。
 
 - スペック・AMI・料金の根拠: [node-specs.md](../01-design/node-specs.md)
-- OS 内のセットアップ(Docker・vLLM・各案の構築): [deployment-guide.md](../03-deployment/deployment-guide.md) / [03-deployment/](../03-deployment/)
+- OS 内のセットアップ(Docker・vLLM・各案の構築): [デプロイ手順書](../03-deployment/README.md) / [03-deployment/](../03-deployment/)
 
 ## 対象ノード
 
@@ -212,7 +212,7 @@ rm -v user-data-*.sh
 echo "llm-001=${llm_id} app-001=${app1_id} app-001b=${app1b_id} app-002=${app2_id} app-003=${app3_id}"
 ```
 
-この時点ではインターネット未接続(隔離)。シェル接続は §1.4 の EICE で行う(NAT 不要)。パッケージ取得・モデル DL には**インスタンス自身の外向き通信**が要るため、§2 で NAT を作成してからセットアップ([deployment-guide.md](../03-deployment/deployment-guide.md))を行う。
+この時点ではインターネット未接続(隔離)。シェル接続は §1.4 の EICE で行う(NAT 不要)。パッケージ取得・モデル DL には**インスタンス自身の外向き通信**が要るため、§2 で NAT を作成してからセットアップ([デプロイ手順書](../03-deployment/README.md))を行う。
 
 ### 1.4 EC2 Instance Connect Endpoint(EICE)+ 接続
 
@@ -614,7 +614,7 @@ aws iam delete-role --role-name ${project}-scheduler
 ```mermaid
 flowchart LR
     N["1. ネットワーク+SG+EC2+EICE+自動停止 作成<br/>(§1)"] --> NAT1["2. NAT 作成<br/>(§2.1)"]
-    NAT1 --> S["3. EICE 接続しセットアップ<br/>(deployment-guide.md)"]
+    NAT1 --> S["3. EICE 接続しセットアップ<br/>(デプロイ手順書)"]
     S --> AMI["4. AMI 化<br/>(§3)"]
     AMI --> NAT2["5. 経路を選択<br/>Keycloak/ピアリング: NAT 削除<br/>Internet IdP: NAT 維持"]
     NAT2 --> RUN["6. 定常運用<br/>隔離または OIDC 例外"]
@@ -624,7 +624,7 @@ flowchart LR
 
 1. **§1** ネットワーク・SG・EC2・EICE を作成(この時点は隔離だが EICE で接続可能)
 2. **§2.1** NAT を作成して外向き通信を開通(パッケージ・モデル取得用)
-3. EICE で各ノードへ接続し、[deployment-guide.md](../03-deployment/deployment-guide.md) に従いセットアップ(Docker/イメージ/モデル取得)
+3. EICE で各ノードへ接続し、[デプロイ手順書](../03-deployment/README.md) に従いセットアップ(Docker/イメージ/モデル取得)
 4. **§3** 各ノードを AMI 化(復旧・複製用のゴールデンイメージ)
 5. 検証用 Keycloak または VPC ピアリングを使う場合は **§2.2** で NAT を削除する。The Internet 上の外部 IdP を使う場合は **§2.3 経路A** として NAT/IGW を維持する
 6. 定常運用。ピアリング/Keycloak 構成は隔離を維持し、Internet IdP 構成は OIDC バックチャネルだけを例外とする。**シェル保守は EICE で随時可能**。Instance Type 変更は **§4**(AMI から別タイプで再作成)

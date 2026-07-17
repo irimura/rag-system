@@ -5,7 +5,7 @@
 ## 前提
 
 - [事前準備](prerequisites.md) と [ダウンロード手順](download.md) を完了している
-- [Node B構築手順](../03-deployment/deployment-guide.md) §2に従い `.env`、TLS証明書、`auth/groups.json` を準備済み
+- [Node B構築手順](../03-deployment/README.md) §2に従い `.env`、TLS証明書、`auth/groups.json` を準備済み
 - `groups.json` に固定5グループと検証ユーザーの所属を登録済み
 - TEI Embed、Qdrant、rag-apiが起動し、health/readyzが成功する
 - ingestは `force_recreate=True` で単一 collectionを削除・再作成する

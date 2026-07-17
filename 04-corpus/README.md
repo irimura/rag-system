@@ -48,4 +48,4 @@ flowchart LR
 5. [案2(Qdrant + TEI)](ingest-plan2.md)
 6. [案3(OpenSearch)](ingest-plan3.md)
 
-実行前に [Node B構築手順](../03-deployment/deployment-guide.md) の対象案を完了し、初回のコンテナイメージ・モデル取得を済ませてください。
+実行前に [Node B構築手順](../03-deployment/README.md) の対象案を完了し、初回のコンテナイメージ・モデル取得を済ませてください。

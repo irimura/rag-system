@@ -1,5 +1,5 @@
 # 案1: シングルプロセス最小構成(Node B)
-# 構築手順: 03-deployment/deployment-guide.md
+# 構築手順: 03-deployment/README.md
 services:
   chainlit-app:
     build: ./app

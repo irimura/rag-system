@@ -5,10 +5,10 @@ vLLM の OpenAI 互換 API と LangChain を中心に、日本語 RAG を設計�
 | 工程 | ディレクトリ |
 |---|---|
 | 設計 | [01-design/](01-design/README.md) |
-| 構築 | [02-provisioning/](02-provisioning/aws-provisioning.md) |
-| デプロイ | [03-deployment/](03-deployment/deployment-guide.md) |
+| 構築 | [02-provisioning/](02-provisioning/README.md) |
+| デプロイ | [03-deployment/](03-deployment/README.md) |
 | コーパス取り込み | [04-corpus/](04-corpus/README.md) |
 | 精度評価 | [05-evaluation/](05-evaluation/README.md) |
-| チューニング | [06-tuning/](06-tuning/rag-components.md) |
+| チューニング | [06-tuning/](06-tuning/README.md) |
 
 実装4案(案1、案1b、案2、案3)の比較サマリは [設計資料 §3](01-design/README.md#3-実装案の比較) を参照してください。

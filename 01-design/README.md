@@ -48,7 +48,7 @@ flowchart LR
 | **リバースプロキシ** | TLS 終端・ルーティング(案1b/2/3) | Nginx / Caddy |
 | **メタデータ DB** | 会話履歴・ユーザー管理(案3) | PostgreSQL |
 
-> 各要素の詳細と精度向上のポイントは [06-tuning/rag-components.md](../06-tuning/rag-components.md) を参照。
+> 各要素の詳細と精度向上のポイントは [RAG 構成要素解説](../06-tuning/README.md) を参照。
 
 ---
 
@@ -129,7 +129,7 @@ flowchart LR
 
 ## 4. 精度向上の要点(サマリ)
 
-詳細は [06-tuning/rag-components.md](../06-tuning/rag-components.md)。特に効果が大きい順に:
+詳細は [RAG 構成要素解説](../06-tuning/README.md)。特に効果が大きい順に:
 
 1. **Reranker の導入** — Retriever で広め(k=20〜50)に取り、CrossEncoder で上位 3〜5 件に絞る。最も費用対効果が高い。
 2. **チャンク分割の見直し** — 文書構造(見出し)を保った分割 + 適切なチャンクサイズ。日本語はセパレータ調整が必須。

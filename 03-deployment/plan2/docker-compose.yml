@@ -1,5 +1,5 @@
 # 案2: Docker Compose 標準構成(Node B)
-# 構築手順: 03-deployment/deployment-guide.md
+# 構築手順: 03-deployment/README.md
 # 外部公開は nginx(80/443)のみ。他は 127.0.0.1 バインド
 services:
   nginx:

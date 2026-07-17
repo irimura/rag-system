@@ -67,7 +67,7 @@ cp -v ${downloaded_pdf} ${CORPUS_DIR}/raw/whitepaper/information-communications-
 
 ### 前処理
 
-案1/2/3の現行 Loader は `PyPDFLoader` で PDF を直接読み込むため、通常は形式変換しません。OCRが必要なスキャン PDF や段組み崩れがある場合は、[構成要素解説](../06-tuning/rag-components.md) §1 に従って別 Loader/OCR の採用を検討し、原本を残したまま検証用出力を分けます。
+案1/2/3の現行 Loader は `PyPDFLoader` で PDF を直接読み込むため、通常は形式変換しません。OCRが必要なスキャン PDF や段組み崩れがある場合は、[構成要素解説](../06-tuning/README.md) §1 に従って別 Loader/OCR の採用を検討し、原本を残したまま検証用出力を分けます。
 
 ### 検収
 

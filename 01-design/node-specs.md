@@ -81,7 +81,7 @@ GPU インスタンスの選定は、次の順で絞り込みます。
 
 - m7i/r7i(Intel)は例示です。同世代の AMD(m7a/r7a)は同スペックでやや安価なので、リージョンの提供状況と単価で選んで構いません
 - **ARM(Graviton, m7g/r7g)は避けてください**。本構成のコンテナイメージ(TEI CPU 版等)は x86_64 前提で検証しているため
-- AMI は **Ubuntu Server 24.04 LTS(Canonical 公式、素の AMI)**。GPU がないので Deep Learning AMI は不要で、Docker は手順書 [deployment-guide.md](../03-deployment/deployment-guide.md) §0.1 で導入します
+- AMI は **Ubuntu Server 24.04 LTS(Canonical 公式、素の AMI)**。GPU がないので Deep Learning AMI は不要で、Docker は手順書 [デプロイ手順書](../03-deployment/README.md) §0.1 で導入します
 
 ## 3. ストレージ(EBS)
 

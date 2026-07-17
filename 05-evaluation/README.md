@@ -28,7 +28,7 @@ flowchart LR
     L2 -->|"個別観点の深掘り"| CASE["cases/ のケース手順書"]
 ```
 
-1. **準備**: 対象の案(1〜3)を構築し、評価用コーパスを取り込む([03-deployment/deployment-guide.md](../03-deployment/deployment-guide.md))。構成パラメータを記録して固定する(仕様書 §5.1)
+1. **準備**: 対象の案(1〜3)を構築し、評価用コーパスを取り込む([デプロイ手順書](../03-deployment/README.md))。構成パラメータを記録して固定する(仕様書 §5.1)
 2. **レベル1**([level1/procedure.md](level1/procedure.md)): 全ケースの検索指標を機械判定。**不合格ならここで止めて検索側を改善**(生成評価に進まない)
 3. **レベル2**([level2/procedure.md](level2/procedure.md)): End-to-End の生成品質を LLM-as-a-Judge で採点
 4. **記録**: 実験管理表に構成とスコアを 1 行追記(仕様書 §7)。カテゴリ別スコアが低い観点は `cases/` の該当手順書で個別に深掘りする

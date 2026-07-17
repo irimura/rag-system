@@ -4,7 +4,7 @@
 vLLM は GPU ノード(Node A)で稼働済みのものを HTTP 経由で利用し、Node A には手を入れません。
 WebUI に Open WebUI(認証・会話履歴内蔵)、ベクトル DB に Qdrant、Embedding/Rerank は TEI(Text Embeddings Inference)専用コンテナ(CPU 版)に分離します。
 
-> **構築ファイル**: [03-deployment/plan2/](../03-deployment/plan2/)(完全版 compose + rag-api 実装)/ 手順: [deployment-guide.md](../03-deployment/deployment-guide.md)。本書のコードは設計説明用の抜粋。
+> **構築ファイル**: [03-deployment/plan2/](../03-deployment/plan2/)(完全版 compose + rag-api 実装)/ 手順: [デプロイ手順書](../03-deployment/README.md)。本書のコードは設計説明用の抜粋。
 
 ## 構成図
 
@@ -154,5 +154,5 @@ async def chat(req: ChatRequest):
 
 ## この案から次へ進む判断基準
 
-- 固有名詞・型番のキーワード検索を強化したい → まず **RAG API コンテナ内に `BM25Retriever`(rank_bm25・in-memory)を追加**してハイブリッド化を試す(〜数万チャンク目安。日本語は SudachiPy でのトークナイズが必須。[rag-components.md §5](../06-tuning/rag-components.md) 参照)
+- 固有名詞・型番のキーワード検索を強化したい → まず **RAG API コンテナ内に `BM25Retriever`(rank_bm25・in-memory)を追加**してハイブリッド化を試す(〜数万チャンク目安。日本語は SudachiPy でのトークナイズが必須。[RAG 構成要素解説 §5](../06-tuning/README.md) 参照)
 - in-memory BM25 では足りない規模(数十万チャンク〜)、または全文検索の運用機能(増分更新・レプリカ)が必要 → **案3**

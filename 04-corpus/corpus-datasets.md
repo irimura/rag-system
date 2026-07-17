@@ -28,4 +28,4 @@ Vector DB へ投入する、日本語 RAG の動作検証・精度評価・負�
 
 > 推奨セットの入手、前処理、固定グループへの配置、案1/1b/2/3への投入は [コーパス取り込み手順](README.md) を参照してください。
 
-> **取り込み時の注意:** PDF は抽出品質を必ず目視サンプリングする([RAG 構成要素 §1](../06-tuning/rag-components.md))。Wikipedia ダンプは wikiextractor(MIT)等で本文抽出してから投入する。
+> **取り込み時の注意:** PDF は抽出品質を必ず目視サンプリングする([RAG 構成要素 §1](../06-tuning/README.md))。Wikipedia ダンプは wikiextractor(MIT)等で本文抽出してから投入する。

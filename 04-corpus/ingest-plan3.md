@@ -5,7 +5,7 @@
 ## 前提
 
 - [事前準備](prerequisites.md) と [ダウンロード手順](download.md) を完了している
-- [Node B構築手順](../03-deployment/deployment-guide.md) §3の Security Plugin有効手順を完了している
+- [Node B構築手順](../03-deployment/README.md) §3の Security Plugin有効手順を完了している
 - `vm.max_map_count=262144`、`.env`、TLS証明書、`auth/groups.json` を準備済み
 - 固定5グループを `groups.json` に登録し、`security-init` がグループ別 DLS role/internal userを作成できる
 - OpenSearch起動後に同じコンテナから `root-ca.pem` を取得し、`rag-api` / `security-init` / `ingest` へ read-only mountしている

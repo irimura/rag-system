@@ -3,7 +3,7 @@
 [案1](plan1-minimal.md)と同じ最小構成の別形として、LangChain や Python コードを使わず、Open WebUI 自体に RAG のオーケストレーションを担わせます。
 チャンク分割や検索処理を実装して学ぶ場合は [案1](plan1-minimal.md)、GUI 設定だけで試す場合は本案が適します。
 
-> **構築ファイル**: [03-deployment/plan1b/](../03-deployment/plan1b/) / 手順: [deployment-guide.md](../03-deployment/deployment-guide.md)
+> **構築ファイル**: [03-deployment/plan1b/](../03-deployment/plan1b/) / 手順: [デプロイ手順書](../03-deployment/README.md)
 
 ## 構成図
 
@@ -51,7 +51,7 @@ Open WebUI 標準のローカル認証と OIDC は併存でき、private Knowled
 cd 03-deployment/plan1b
 cp -v .env.example .env
 vim .env
-# TLS 証明書の生成手順は deployment-guide.md §1b を参照
+# TLS 証明書の生成手順は デプロイ手順書 §1b を参照
 docker compose up -d
 ```
 
