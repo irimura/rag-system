@@ -106,12 +106,12 @@ flowchart LR
 | 詳細 | [plan1-minimal.md](plan1-minimal.md) | [plan1b-openwebui.md](plan1b-openwebui.md) | [plan2-standard.md](plan2-standard.md) | [plan3-hybrid.md](plan3-hybrid.md) |
 | ノード構成 | Node A + Node B | Node A + Node B | Node A + Node B | Node A + Node B(将来 DB を Node C に分離可) |
 | WebUI | Chainlit(API 同居) | Open WebUI + Nginx(TLS) | Open WebUI + Nginx(TLS) | Open WebUI + Nginx(TLS) |
-| RAG API | Chainlit プロセス内 | Open WebUI 内蔵 RAG(コード不要) | FastAPI + LangChain | FastAPI + LangGraph |
-| ベクトル DB | Chroma(組み込み) | 内蔵 Chroma | Qdrant | OpenSearch(Hybrid)or Milvus |
-| Embedding | プロセス内(sentence-transformers) | Open WebUI 内蔵(CPU) | TEI(専用コンテナ) | TEI(専用コンテナ) |
-| Rerank | プロセス内 CrossEncoder | Open WebUI 内蔵(CPU) | TEI rerank | TEI rerank |
-| 検索方式 | ベクトルのみ | ベクトル(内蔵ハイブリッド可) | ベクトル + MMR | **ハイブリッド(BM25 + ベクトル)+ RRF** |
-| 会話履歴 | なし(メモリ) | 内蔵 SQLite | Open WebUI 内蔵(SQLite) | PostgreSQL |
+| RAG API | Chainlit プロセス内(LangChain) | Open WebUI 内蔵(RAG / コード不要) | FastAPI + LangChain(rag-api 専用コンテナ) | FastAPI + LangGraph(rag-api 専用コンテナ) |
+| ベクトル DB | Chroma(Chainlit プロセス内) | Open WebUI 内蔵(Chroma) | Qdrant(専用コンテナ) | OpenSearch(専用コンテナ / Hybrid)または Milvus(専用コンテナ) |
+| Embedding | Chainlit プロセス内(sentence-transformers) | Open WebUI 内蔵(CPU) | TEI(専用コンテナ) | TEI(専用コンテナ) |
+| Rerank | Chainlit プロセス内(CrossEncoder) | Open WebUI 内蔵(CPU) | TEI(専用コンテナ) | TEI(専用コンテナ) |
+| 検索方式 | ベクトルのみ(Chainlit プロセス内) | Open WebUI 内蔵(ハイブリッド: BM25 + ベクトル) | ベクトル + MMR(rag-api コンテナ内) | **ハイブリッド(BM25 + ベクトル)+ RRF(rag-api コンテナ内)** |
+| 会話履歴 | 永続化なし(Chainlit プロセス内メモリのみ) | Open WebUI 内蔵(SQLite) | Open WebUI 内蔵(SQLite) | PostgreSQL(専用コンテナ) |
 | 認証/グループ認可(標準機能) | なし / なし | あり / あり(Knowledge ACL) | WebUI のみあり / 外部 rag-api はなし | WebUI はあり / OpenSearch DLS は未連携 |
 | デプロイ(Node B) | Docker Compose(venv + systemd は代替) | Docker Compose | Docker Compose | Docker Compose |
 | 想定規模 | 個人・PoC(〜数千文書) | 個人・PoC | 部門(〜数十万チャンク) | 全社(数百万チャンク〜) |
