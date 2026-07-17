@@ -1,4 +1,4 @@
-# 05-evaluation/ — RAG 精度評価の実行手順書
+# RAG 精度評価の実行手順
 
 [05-evaluation/evaluation-spec.md](evaluation-spec.md)(テスト仕様書)を実際に実行する際の手順書とサンプルスクリプト群です。
 
