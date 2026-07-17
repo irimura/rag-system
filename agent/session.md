@@ -173,6 +173,7 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - ルート `.gitignore` に `.venv-corpus/` を追加した
 - 検証: corpus用 bash 7ファイルの `bash -n`、一時コーパスで copy/symlink各5ファイルの配置と付随4ファイル名の除外、livedoor保存名導出、Markdown 9ファイル/ローカルリンク44件、`git diff --check` は合格
 - **未確認**: Node BのDockerコンテナで `${CORPUS_DIR}` 追加マウント後のsymlink追従、実コーパスによる全量ingest
+
 ## 15. agent/ ディレクトリの運用整理(2026-07-17)
 
 - `agent/` 配下で恒久的に維持するファイルは `session.md` のみとし、引き継ぐべき決定・要点・未確認事項を本ファイルへ集約する
