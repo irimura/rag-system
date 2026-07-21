@@ -393,6 +393,19 @@ aws ec2 create-route --route-table-id ${rtb_id} --destination-cidr-block 0.0.0.0
 
 ### 2.2 削除(セットアップ / AMI 化が済んだら)
 
+§2.1 を実行した直後の同じシェルでは、各 ID が変数に保持されているため、次の再取得は不要です。新しいシェルで削除する場合は、削除コマンドを実行する前にタグから ID を再取得します。
+
+```bash
+vpc_id=$(aws ec2 describe-vpcs --filters "Name=tag:Project,Values=${project}" --query 'Vpcs[0].VpcId' --output text)
+rtb_id=$(aws ec2 describe-route-tables --filters "Name=tag:Project,Values=${project}" "Name=tag:Name,Values=${project}-rtb" --query 'RouteTables[0].RouteTableId' --output text)
+nat_id=$(aws ec2 describe-nat-gateways --filter "Name=tag:Project,Values=${project}" "Name=state,Values=available" --query 'NatGateways[0].NatGatewayId' --output text)
+eip_alloc=$(aws ec2 describe-addresses --filters "Name=tag:Project,Values=${project}" "Name=tag:Name,Values=${project}-nat-eip" --query 'Addresses[0].AllocationId' --output text)
+nat_rtb_id=$(aws ec2 describe-route-tables --filters "Name=tag:Project,Values=${project}" "Name=tag:Name,Values=${project}-nat-rtb" --query 'RouteTables[0].RouteTableId' --output text)
+nat_assoc_id=$(aws ec2 describe-route-tables --route-table-ids ${nat_rtb_id} --query 'RouteTables[0].Associations[0].RouteTableAssociationId' --output text)
+nat_subnet_id=$(aws ec2 describe-subnets --filters "Name=tag:Project,Values=${project}" "Name=tag:Name,Values=${project}-nat-subnet" --query 'Subnets[0].SubnetId' --output text)
+igw_id=$(aws ec2 describe-internet-gateways --filters "Name=tag:Project,Values=${project}" "Name=tag:Name,Values=${project}-igw" --query 'InternetGateways[0].InternetGatewayId' --output text)
+```
+
 ```bash
 # ワークロードを隔離に戻す(既定ルート削除)
 aws ec2 delete-route --route-table-id ${rtb_id} --destination-cidr-block 0.0.0.0/0
@@ -412,7 +425,7 @@ aws ec2 detach-internet-gateway --internet-gateway-id ${igw_id} --vpc-id ${vpc_i
 aws ec2 delete-internet-gateway --internet-gateway-id ${igw_id}
 ```
 
-> NAT Gateway は稼働時間と処理データ量で課金されます。§2.3 経路Aとして外部 IdP に常設する場合を除き、使わない間は必ず削除します。ID を保持していない新しいシェルで削除する場合は §5.1 のタグ検索で `nat_id` 等を再取得します。
+> NAT Gateway は稼働時間と処理データ量で課金されます。§2.3 経路Aとして外部 IdP に常設する場合を除き、使わない間は必ず削除します。ID を保持していない新しいシェルでは、上記の ID 再取得を実施してから削除します。
 
 ### 2.3 外部 IdP へのバックチャネル経路(OIDC 利用時・任意)
 
