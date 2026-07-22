@@ -1,6 +1,6 @@
 # コーパスのダウンロードと前処理
 
-> 以降のコマンド例中の `${repo_dir}`、`${downloaded_pdf}`、`${downloaded_archive}`、`${pdf_file}`、`${sample_article}` は、実行前に環境の絶対パスまたはファイル名へ置き換えてください。先に [事前準備](prerequisites.md) を完了し、`04-corpus/scripts/corpus.env` を作成してください。
+> 以降のコマンド例中の `${repo_dir}` は、実行前にリポジトリの絶対パスへ置き換えてください。その他の変数の設定コマンドは各節にあります。先に [事前準備](prerequisites.md) を完了し、`04-corpus/scripts/corpus.env` を作成してください。
 
 取得物は `${CORPUS_DIR}/raw/`、前処理済み成果物は `${CORPUS_DIR}/processed/` に保存します。既存の非空ファイルはスキップするため、同じ設定で再実行できます。
 
@@ -62,6 +62,8 @@ bash 04-corpus/scripts/download_soumu_whitepaper.sh
 情報通信白書の年度ページから全体版 PDF を取得し、表示された `${CORPUS_DIR}/raw/whitepaper/` のファイル名へ配置します。
 
 ```bash
+downloaded_pdf="${HOME}/Downloads/whitepaper2025_all.pdf"   # ブラウザで保存した実ファイル名に合わせる
+test -s ${downloaded_pdf}
 cp -v ${downloaded_pdf} ${CORPUS_DIR}/raw/whitepaper/information-communications-whitepaper-${WHITEPAPER_YEAR}.pdf
 ```
 
@@ -72,6 +74,7 @@ cp -v ${downloaded_pdf} ${CORPUS_DIR}/raw/whitepaper/information-communications-
 ### 検収
 
 ```bash
+pdf_file="${CORPUS_DIR}/raw/whitepaper/${SOUMU_WHITEPAPER_FILENAME:-information-communications-whitepaper-${WHITEPAPER_YEAR}.pdf}"
 pdfinfo ${pdf_file}
 pdftotext -f 1 -l 5 ${pdf_file} - | sed -n '1,120p'
 du -h ${pdf_file}
@@ -95,6 +98,8 @@ bash 04-corpus/scripts/download_ipa.sh
 IPAの各掲載ページから PDF を取得し、`${CORPUS_DIR}/raw/ipa/` へ原ファイル名で配置します。掲載ページが示す引用・転載条件を読み、IPA名、資料名、URLを出典として記録します。
 
 ```bash
+downloaded_pdf="${HOME}/Downloads/ISWP2025_ALL.pdf"   # 取得した資料のファイル名に合わせる
+test -s ${downloaded_pdf}
 cp -v ${downloaded_pdf} ${CORPUS_DIR}/raw/ipa/
 ```
 
@@ -107,10 +112,11 @@ cp -v ${downloaded_pdf} ${CORPUS_DIR}/raw/ipa/
 ```bash
 find ${CORPUS_DIR}/raw/ipa -type f -name '*.pdf' -print
 find ${CORPUS_DIR}/raw/ipa -type f -name '*.pdf' -exec du -h {} \;
+pdf_file="$(find ${CORPUS_DIR}/raw/ipa -type f -name '*.pdf' -print | sort | head -n 1)"
 pdftotext -f 1 -l 3 ${pdf_file} - | sed -n '1,120p'
 ```
 
-各 PDF で表紙、目次、本文、表/図、付録をサンプリングし、出典情報を確認します。
+資料ごとに `pdf_file` を再設定して `pdftotext` を繰り返します。各 PDF で表紙、目次、本文、表/図、付録をサンプリングし、出典情報を確認します。
 
 ## 4. livedoorニュースコーパス
 
@@ -128,6 +134,7 @@ bash 04-corpus/scripts/download_livedoor.sh
 ロンウイットの配布ページから通常テキスト版 `ldcc-20140209.tar.gz` を取得し、`${CORPUS_DIR}/raw/livedoor/` へ配置して展開します。展開後のカテゴリ別 `LICENSE.txt` は raw側に保持しますが、`prepare_stage.sh` は `LICENSE.txt` / `CHANGES.txt` / `README.txt` を検索コーパスへ配置しません。
 
 ```bash
+downloaded_archive="${HOME}/Downloads/ldcc-20140209.tar.gz"   # ロンウイットから保存したパスに合わせる
 cp -v ${downloaded_archive} ${CORPUS_DIR}/raw/livedoor/ldcc-20140209.tar.gz
 tar -xzf ${CORPUS_DIR}/raw/livedoor/ldcc-20140209.tar.gz -C ${CORPUS_DIR}/raw/livedoor
 ```
@@ -183,10 +190,11 @@ python3 04-corpus/scripts/preprocess_wikipedia.py --max-articles 50000 --categor
 ```bash
 find ${CORPUS_DIR}/processed/wikipedia -type f -name '*.txt' | wc -l
 du -sh ${CORPUS_DIR}/raw/wikipedia ${CORPUS_DIR}/processed/wikipedia
-sed -n '1,40p' ${CORPUS_DIR}/processed/wikipedia/${sample_article}
+sample_article="$(find ${CORPUS_DIR}/processed/wikipedia -type f -name '*.txt' -print | shuf -n 1)"
+sed -n '1,40p' ${sample_article}
 ```
 
-`${sample_article}` は出力済みファイル名へ置き換えます。記事名、元URL、CC BY-SA 4.0、本文が入り、テンプレート断片や文字化けが許容範囲かを無作為に20件以上確認します。
+上のコマンドは出力済みファイルから無作為に1件を選びます。再実行を繰り返して20件以上について、記事名、元URL、CC BY-SA 4.0、本文が入り、テンプレート断片や文字化けが許容範囲かを確認します。
 
 ## 6. 配置前の総合検収
 
