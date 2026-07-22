@@ -4,7 +4,7 @@
 
 取得物は `${CORPUS_DIR}/raw/`、前処理済み成果物は `${CORPUS_DIR}/processed/` に保存します。既存の非空ファイルはスキップするため、同じ設定で再実行できます。
 
-手動取得・検収コマンドを実行するシェルでは、最初に共通設定を読み込みます。
+前処理・検収コマンドを実行するシェルでは、最初に共通設定を読み込みます。取得スクリプトは `corpus.env` を自身で読み込むため、この読み込みは不要です。
 
 ```bash
 cd ${repo_dir}
@@ -13,18 +13,13 @@ set -a && source 04-corpus/scripts/corpus.env && set +a
 
 ## 1. e-Gov法令
 
-### スクリプト実行例
+### 取得
 
 ```bash
-cd ${repo_dir}
 bash 04-corpus/scripts/download_egov_laws.sh
 ```
 
 既定は個人情報保護法、労働基準法を含む10法令です。対象は `corpus.env` の `EGOV_LAW_IDS` で差し替えます。
-
-### 手動取得の代替手順
-
-e-Gov法令検索で対象法令を開き、「ダウンロード > XML」から取得し、法令IDをファイル名にして `${CORPUS_DIR}/raw/egov/` へ配置します。API障害時も HTML や PDF へ形式変更せず、条・項構造を持つ XML を優先します。
 
 ### 前処理
 
@@ -46,26 +41,15 @@ rg -n '^### 第(一|二|三)条' ${CORPUS_DIR}/processed/laws
 
 ## 2. 総務省 情報通信白書
 
-### スクリプト実行例
+### 取得
 
 `corpus.env` の `WHITEPAPER_YEAR` と `SOUMU_WHITEPAPER_URL` を公式ページで確認してから実行します。
 
 ```bash
-cd ${repo_dir}
 bash 04-corpus/scripts/download_soumu_whitepaper.sh
 ```
 
-年度ごとに URL/分冊構成が変わり、`SOUMU_WHITEPAPER_URL` が空の場合はスクリプトが手動取得先と保存先を表示して終了します。
-
-### 手動取得の代替手順
-
-情報通信白書の年度ページから全体版 PDF を取得し、表示された `${CORPUS_DIR}/raw/whitepaper/` のファイル名へ配置します。
-
-```bash
-downloaded_pdf="${HOME}/Downloads/whitepaper2025_all.pdf"   # ブラウザで保存した実ファイル名に合わせる
-test -s ${downloaded_pdf}
-cp -v ${downloaded_pdf} ${CORPUS_DIR}/raw/whitepaper/information-communications-whitepaper-${WHITEPAPER_YEAR}.pdf
-```
+年度ごとに URL/分冊構成が変わります。`SOUMU_WHITEPAPER_URL` が空の場合、スクリプトは設定が必要な項目を表示して終了します。
 
 ### 前処理
 
@@ -84,24 +68,13 @@ du -h ${pdf_file}
 
 ## 3. IPA公開資料
 
-### スクリプト実行例
+### 取得
 
 ```bash
-cd ${repo_dir}
 bash 04-corpus/scripts/download_ipa.sh
 ```
 
 既定URLは情報セキュリティ白書2025全章版と中小企業の情報セキュリティ対策ガイドライン第4.0版です。別年度/資料は `IPA_PDF_URLS` と `IPA_SOURCE_PAGE_URLS` を同時に更新します。
-
-### 手動取得の代替手順
-
-IPAの各掲載ページから PDF を取得し、`${CORPUS_DIR}/raw/ipa/` へ原ファイル名で配置します。掲載ページが示す引用・転載条件を読み、IPA名、資料名、URLを出典として記録します。
-
-```bash
-downloaded_pdf="${HOME}/Downloads/ISWP2025_ALL.pdf"   # 取得した資料のファイル名に合わせる
-test -s ${downloaded_pdf}
-cp -v ${downloaded_pdf} ${CORPUS_DIR}/raw/ipa/
-```
 
 ### 前処理
 
@@ -120,29 +93,17 @@ pdftotext -f 1 -l 3 ${pdf_file} - | sed -n '1,120p'
 
 ## 4. livedoorニュースコーパス
 
-### スクリプト実行例
+### 取得
 
 ```bash
-cd ${repo_dir}
 bash 04-corpus/scripts/download_livedoor.sh
 ```
 
 スクリプトは CC BY-ND 2.1 JPの改変禁止・社内評価限定を実行時に表示し、`ldcc-20140209.tar.gz` を取得して原文のまま展開します。
 
-### 手動取得の代替手順
-
-ロンウイットの配布ページから通常テキスト版 `ldcc-20140209.tar.gz` を取得し、`${CORPUS_DIR}/raw/livedoor/` へ配置して展開します。展開後のカテゴリ別 `LICENSE.txt` は raw側に保持しますが、`prepare_stage.sh` は `LICENSE.txt` / `CHANGES.txt` / `README.txt` を検索コーパスへ配置しません。
-
-```bash
-downloaded_archive="${HOME}/Downloads/ldcc-20140209.tar.gz"   # ロンウイットから保存したパスに合わせる
-cp -v ${downloaded_archive} ${CORPUS_DIR}/raw/livedoor/ldcc-20140209.tar.gz
-tar -xzf ${CORPUS_DIR}/raw/livedoor/ldcc-20140209.tar.gz -C ${CORPUS_DIR}/raw/livedoor
-```
-
-
 ### 前処理
 
-本文の書き換え、正規化結果の保存、要約保存は行いません。展開済み `.txt` をそのまま `documents/livedoor/` へ配置し、チャンク分割は ingest コンテナ内部だけで行います。原文、チャンク、Vector DB、派生成果物を再配布しません。
+スクリプトが展開したカテゴリ別 `LICENSE.txt` は raw側に保持しますが、`prepare_stage.sh` は `LICENSE.txt` / `CHANGES.txt` / `README.txt` を検索コーパスへ配置しません。本文の書き換え、正規化結果の保存、要約保存は行いません。展開済み `.txt` をそのまま `documents/livedoor/` へ配置し、チャンク分割は ingest コンテナ内部だけで行います。原文、チャンク、Vector DB、派生成果物を再配布しません。
 
 ### 検収
 
@@ -156,20 +117,15 @@ du -sh ${CORPUS_DIR}/raw/livedoor/text
 
 ## 5. Wikipedia日本語版
 
-### スクリプト実行例
+### 取得
 
 先頭分割ファイルだけを取得する例です。
 
 ```bash
-cd ${repo_dir}
 bash 04-corpus/scripts/download_wikipedia_dump.sh --mode partial
 ```
 
 全件は `--mode full` を指定します。`WIKIPEDIA_DUMP_DATE=latest` は実行時点の最新版を指すため、再現性が必要な評価では `YYYYMMDD` を固定します。
-
-### 手動取得の代替手順
-
-Wikimedia Downloads の jawiki対象日ディレクトリから `pages-articles.xml.bz2` または先頭の `pages-articles-multistream1...bz2` を取得し、`${CORPUS_DIR}/raw/wikipedia/` へ配置します。ファイル名は配布元のまま保持します。
 
 ### 前処理
 
