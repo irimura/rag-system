@@ -1,107 +1,153 @@
-# 文書変換ツール選定 評価レポート（PDF / HTML / PPT → Markdown 前処理）
+# 文書変換ツール選定 評価レポート
 
-> 本レポートは**候補比較の上で PoC 主候補を選定し、検証計画を定める**評価であり、採用の確定は未定です。**本番統合**（`prepare_stage.sh` / `common.py` の改修、本番 `requirements.txt` への依存追加、各ドキュメント更新）は PoC 実測（§9）の合格をもって着手します。**PoC 実施そのもの**に必要な作業 —— 隔離した venv、一時的な変換スクリプト、依存 lock、モデル prefetch、評価ハーネス —— は PoC 期間中に作成し、使用版・モデル revision・lock を記録として保存します。
+> 本レポートは、PDF / HTML / PPTX の変換ツールから PoC 主候補を選び、検証計画を定めます。採用は PoC 合格後に確定します。
 >
-> 調査時点: 2026年7月。ライセンス条件・ベンチマーク値・API 仕様は変動するため、採用前に一次情報で再確認してください。コード例は版依存であり、PoC 時に版を固定して動作確認します。
+> PoC では、隔離 venv、一時スクリプト、依存 lock、モデルキャッシュ、評価ハーネスを作成します。使用したパッケージ版、モデル revision、lock を保存します。
+>
+> 本番ファイルの変更は PoC 合格後に行います。対象は `prepare_stage.sh`、`common.py`、`requirements.txt`、関連ドキュメントです。
+>
+> 調査時点: 2026年7月。採用前にライセンス、ベンチマーク、API 仕様を一次情報で再確認します。コード例は PoC で版を固定して検証します。
 >
 > 改訂履歴:
 > - 2026-07-24 初版
-> - 2026-07-24 一次レビュー指摘を反映（Docling 現行 API への修正、OCR 既定値の訂正、無出典数値の削除、比較の対称化、測定可能な受け入れ基準の明文化）
-> - 2026-07-24 再レビュー指摘を反映（VLM API の引数名修正、認証ヘッダの追記、比較表の無出典評判の除去、正解注釈・非劣性マージン・形式別スコープの明確化、PoC 実装と本番統合の区別）
-> - 2026-07-24 三巡目レビュー指摘を反映（VLM 例に vLLM 向け `params`・served model 名の一致を追記、OCR エンジン列挙の更新、既定レイアウトモデル名の訂正）。判定: 条件付き承認 → 条件解消済み
-> - 2026-07-24 §6-2 ワークフローパターン整理を追記（パース軸と実行・受け渡しパターンの 2 階層。レビュー済み）
+> - 2026-07-24 一次レビュー反映
+> - 2026-07-24 二次レビュー反映
+> - 2026-07-24 三次レビュー反映。承認条件を解消
+> - 2026-07-24 ワークフローパターンを追記
 
 ## 1. 背景と目的
 
-本リポジトリは vLLM + LangChain ベースの日本語 RAG システムのドキュメント/リファレンス集で、**コーパス取得（フェーズ 04）→ ingest 取り込み（フェーズ 03）**の二段構成です。
+本リポジトリは vLLM と LangChain を使う日本語 RAG システムです。コーパス取得と ingest を分離しています。
 
-現状の PDF コーパス（総務省 情報通信白書・IPA 公開資料）は前処理なしで `raw/` から `documents/{whitepaper,ipa}/` へ配置され、ingest 時に **`PyPDFLoader`（pypdf）でページ単位に直接抽出**しています（[plan2 common.py](../03-deployment/plan2/rag-api/common.py)。plan1/plan3 の `load_documents` / `split_documents` も同等）。[構成要素解説](../06-tuning/README.md) §1 は「**抽出品質が全ての上限を決める**」と明記し、表・段組み・スキャン PDF で pypdf の抽出が壊れる問題を既に課題として挙げています。
+総務省の情報通信白書と IPA 公開資料は、前処理せず `raw/` から `documents/{whitepaper,ipa}/` へ配置します。ingest 時は `PyPDFLoader` でページ単位に抽出します。
 
-本レポートは、この抽出品質の課題に対する無償利用可能な文書変換ツールを比較し、**PoC で実測すべき主候補と検証計画**を定めます。
+[plan2 common.py](../03-deployment/plan2/rag-api/common.py) を参照してください。plan1 と plan3 の `load_documents`、`split_documents` も同等です。
+
+pypdf は表、段組み、スキャン PDF の抽出を誤ることがあります。[構成要素解説](../06-tuning/README.md)でも抽出品質を既知課題としています。
+
+本レポートは無償利用可能な変換ツールを比較し、PoC 主候補と検証計画を定めます。
 
 ### スコープ
 
-取り込み対象は **PDF / HTML / PPT の 3 形式**です。ここで重要な制約があります —— **現行 `load_documents` は `.pdf` / `.md` / `.txt` しか glob しておらず、`.html` / `.pptx` の取り込み経路がそもそも存在しません**。
+- 対象形式: PDF、HTML、PPTX
+- 品質評価: PDF のみ
+- 成立確認: HTML、PPTX
 
-ただし品質検証の主対象は現行コーパスの実体である **PDF** とし、**HTML / PPTX は「形式対応の成立確認」に限定**します（§9-6）。定量的な構造指標・合格条件は PDF に対して定義します。
-
----
-
-## 2. 結論（サマリ）
-
-- **推奨: Docling を PoC 主候補とし、§9 の実測合格をもって採用を確定する。** MIT ライセンス・ローカル実行で PDF/HTML/PPTX/DOCX/XLSX を単一 API でカバーし、レイアウト・表構造を明示的に推定するため、pypdf 比の改善が**期待できる**（対象コーパスでの優位は実測まで未確定）。オフライン運用方針とも両立します。
-- **多形式を前処理で Markdown 化する方式が、スコープ拡大により構造的に有利。** 全形式を `processed/**/*.md` に正規化すれば、**ingest 側は既存の `.md` TextLoader 経路のみで全形式をカバー**でき、`load_documents` への `.html`/`.pptx` Loader 追加が不要になります。
-- **Docling の `HybridChunker` は本システムの既知課題に対応する。** トークナイザ認識分割が「文字数 vs トークン数」の齟齬（日本語で末尾が黙って切り捨てられる問題、[構成要素解説](../06-tuning/README.md) §2）を解消し、`contextualize()` が見出し文脈の付与を担い、`repeat_table_header` が表のチャンク跨ぎ時のヘッダ再掲を行えます（いずれも Docling の構造認識が正しい場合に有効）。**これらは `DoclingDocument` を保持している場合のみ使える**点が方式選択に効きます（§6 の案A/案B）。
-- **比較対象を必ず立てて同一条件で測る。** 軽量比較対象に **MarkItDown**（MIT・GPU 不要）、高機能比較対象に **MinerU**（ライセンス条件の確認が前提）。順位づけは実測後に行います。
-- **公開ベンチマークは対象言語・文書種・版・指標が異なり、順位を直接比較できない。** 参考指標は **OmniDocBench v1.0**（CVPR 2025）/ **olmOCR-Bench**（英語中心）。最終判断は本件コーパス（日本語白書等）での同一条件実測です。
-- **最大の運用留意点:** 重い依存（torch＋モデル）と初回モデルダウンロードを **NAT 開放中の取得フェーズで事前 prefetch** し、パース本体は**取得用 venv に閉じ込める**こと。
+現行の `load_documents` は `.pdf`、`.md`、`.txt` のみを読み込みます。HTML と PPTX の取り込み経路はありません。
 
 ---
 
-## 3. 現状整理（文書フローと組込み箇所）
+## 2. 結論
+
+- PoC 主候補は Docling とする。
+  - MIT ライセンスでローカル実行できる。
+  - PDF、HTML、PPTX、DOCX、XLSX を単一 API で扱える。
+  - レイアウトと表構造を推定できる。
+  - pypdf より優れるかは PoC で確認する。
+- 多形式の文書は、前処理で Markdown に統一する。
+  - ingest は既存の `TextLoader` を利用できる。
+  - HTML、PPTX 用の Loader 追加が不要になる。
+- チャンク方式は案Aと案Bを比較する。
+  - 案Aは Markdown を既存 splitter で分割する。
+  - 案Bは DoclingDocument JSON を `HybridChunker` で分割する。
+- MarkItDown と MinerU を比較対象にする。
+  - MarkItDown は軽量比較対象とする。
+  - MinerU は高機能比較対象とし、先にライセンスを確認する。
+- 公開ベンチマークは参考情報に限定する。
+  - 対象言語、文書、版、指標が異なるため、単純な順位比較はしない。
+  - 最終判断は本件コーパスの実測に基づく。
+- パース処理は取得用 venv に分離する。
+  - モデルと依存は NAT 開放中に取得する。
+
+---
+
+## 3. 現状
 
 | 工程 | 内容 |
 |---|---|
-| 取得 | `download_soumu_whitepaper.sh` → `raw/whitepaper/`、`download_ipa.sh` → `raw/ipa/`（いずれも前処理なし）。e-Gov は `preprocess_egov.py` で XML→Markdown、Wikipedia は `preprocess_wikipedia.py` で txt 化 |
-| 配置 | `prepare_stage.sh` が whitepaper/ipa は **`RAW_DIR` から**、laws/wikipedia は `PROCESSED_DIR` から `documents/<group>/` へコピー |
-| 取り込み | `common.py:load_documents` が `.pdf`（PyPDFLoader）/ `.md` / `.txt`（TextLoader, `autodetect_encoding=True`）を glob。**`.html` / `.pptx` は対象外** |
-| 分割 | `split_documents` = `RecursiveCharacterTextSplitter`（`CHUNK_SIZE` 既定 500 / `CHUNK_OVERLAP` 既定 100・日本語セパレータ）。見出し構造は未利用 |
-| メタデータ | 案2/3 は `assign_group_metadata` が `documents/<group>/` 第1階層から `group` を導出（ACL 用）。`DOCS_DIR` 外のパスや `documents/` 直下のファイルは **fail closed（SystemExit）で停止**する。**`source` と `group` を壊さないことが統合の必須条件** |
+| 取得 | 白書と IPA は `raw/` へ保存する。e-Gov は XML を Markdown に、Wikipedia は txt に変換する |
+| 配置 | `prepare_stage.sh` が白書と IPA を `RAW_DIR` から配置する。laws と wikipedia は `PROCESSED_DIR` から配置する |
+| 取り込み | `load_documents` が PDF、Markdown、txt を読み込む。HTML と PPTX は対象外 |
+| 分割 | `RecursiveCharacterTextSplitter` を使う。既定値は 500 文字、100 文字 overlap。日本語 separator を設定済み |
+| メタデータ | 案2/3は `documents/<group>/` の第1階層から `group` を設定する。不正なパスは `SystemExit` で停止する |
 
-前処理の雛形としては [preprocess_egov.py](scripts/preprocess_egov.py)（`load_env` で `corpus.env` 読込、`--input-dir`/`--output-dir`、mtime 比較でスキップ、出典を先頭に付与）が理想的です。
+統合時は `source` と `group` を維持します。
+
+前処理は [preprocess_egov.py](scripts/preprocess_egov.py) を雛形にします。このスクリプトは環境設定、入出力引数、mtimeによるスキップ、出典付与を実装しています。
 
 ---
 
 ## 4. 多形式変換ツール比較
 
-### 4-1. 候補一覧（同一軸での整理）
+### 4-1. 候補一覧
 
-普及度（GitHub star 等）は**関心度の指標であり、実運用件数や品質を示さない**ため補助情報とします（2026-07-24 閲覧、概算）。品質欄の記述は公開情報に基づく期待値であり、**本件コーパスでの優劣は §9 の実測まで未確定**です。
+GitHub star などの普及度は補助情報です。実運用件数や品質を示すものではありません。値は2026-07-24閲覧時の概算です。
 
-| ツール | 入力形式（本件3形式） | ライセンス（コード / モデル重み） | 日本語・縦書き | 表・読み順 | CPU/GPU | オフライン適性 | 補助情報（普及度） |
+| ツール | 入力形式 | ライセンス | 日本語 | 構造化 | 実行環境 | オフライン | 補助情報 |
 |---|---|---|---|---|---|---|---|
-| **Docling** (IBM) | PDF/HTML/PPTX ○（＋DOCX/XLSX 等） | コード: MIT / **モデル重みは使用するモデルごとに元パッケージのライセンスを個別確認** | 公式の日本語比較値なし。§9 で実測 | 既定の Heron レイアウトモデル＋TableFormer でレイアウト・表構造を明示的に推定（使用モデルと revision は PoC で固定。品質は §9 で実測） | CPU 可・GPU で高速化 | ◎ ローカル実行・モデル事前取得可 | 約 63.7k star。LangChain/LlamaIndex/Haystack 統合 |
-| **MarkItDown** (Microsoft) | PDF/HTML/PPTX ○（＋音声/EPUB/メール等） | MIT | 公式の日本語比較値なし。§9 で実測 | レイアウト・表構造の推定機構なし（公式比較値なし。§9 で実測） | CPU のみで可（GPU 不要） | ◎ 軽量 | 約 168.6k star、依存公開リポジトリ約 3,079 件（GitHub 概算） |
-| **Unstructured** | PDF/HTML/PPTX ○（30+ 形式） | OSS ライブラリ: Apache-2.0（別に商用 API/プラットフォームの提供あり） | 公式の日本語比較値なし。§9 で実測 | 公式比較値なし。§9 で実測 | CPU 可 | ○（依存パッケージが多い） | RAG 界隈で定番 |
-| **Apache Tika** | PDF/HTML/PPTX ○（1000+ 形式） | Apache-2.0 | 公式の日本語比較値なし | **構造化 Markdown を出さない**（プレーンテキスト＋メタデータ） | CPU・軽量 | ◎（Java 必要） | Java 圏のデファクト。長期実績 |
-| **Marker** (Datalab) | PDF/画像/PPTX/DOCX/XLSX/HTML/EPUB ○ | コード: リポジトリ LICENSE は Apache-2.0（README に GPL 表記が残る不整合あり）/ **モデル重み: modified AI Pubs Open Rail-M** — 研究・個人・資金調達額または売上 2M USD 未満のスタートアップは無償、それ以外の商用利用は別ライセンス。**要法務確認** | 縦書きの公式対応表明なし。日本語単独の再現可能な精度値は現行公式情報で確認できず。§9 で実測 | 表・数式・フォームの変換機構を持つ（公式の日本語比較値なし） | GPU 推奨 | ○ | olmOCR-Bench 76.1±1.1（Marker 1.10.1、英語中心） |
-| **MinerU** (OpenDataLab) | PDF/画像 ○＋現行版は DOCX/PPTX/XLSX も入力対象。HTML は別プロジェクト MinerU-HTML（本体と同一経路かは要確認） | **MinerU Open Source License**（Apache-2.0＋追加条項、2026年4月に旧 AGPL 系から変更）: 商用利用可能だが **MAU 1億超または月間総収益 2,000万 USD 超で別ライセンス**、第三者向けオンラインサービスには **MinerU 利用の表示義務**。**要法務確認** | 109 言語 OCR（PaddleOCR）を持つが、日本語・縦書きの公式比較値なし。§9 で実測 | 数式 LaTeX 化・多段組の読み順復元の機構を持つ（品質は §9 で実測） | GPU 推奨 | ○ | — |
-| **olmOCR** (AllenAI) | PDF/画像のみ | Apache-2.0 | 英語中心（日本語の公式比較値なし） | スキャン文書 OCR 特化 | GPU 前提 | ○ | olmOCR-Bench 82.4±1.1（olmOCR v0.4.0） |
-| **PyMuPDF4LLM** | PDF のみ | **AGPL-3.0 または別途商用ライセンス（デュアル）**。[構成要素解説](../06-tuning/README.md) §1 も注意喚起済み。**要法務確認** | 公式の日本語比較値なし | Markdown 出力あり | CPU・軽量 | ◎ | — |
+| **Docling** | PDF、HTML、PPTXほか | コードMIT。モデルは個別確認 | 公式比較値なし | HeronとTableFormer | CPU、GPU | ◎ | 約63.7k star |
+| **MarkItDown** | PDF、HTML、PPTXほか | MIT | 公式比較値なし | レイアウト推定なし | CPU | ◎ | 約168.6k star |
+| **Unstructured** | 30形式以上 | OSSはApache-2.0。商用APIは別提供 | 公式比較値なし | 公式比較値なし | CPU | ○ | RAGで広く利用 |
+| **Apache Tika** | 1000形式以上 | Apache-2.0 | 公式比較値なし | プレーンテキスト | CPU、Java | ◎ | 長期実績 |
+| **Marker** | PDF、Office、HTMLほか | コードApache-2.0。重みに商用制限 | 公式比較値なし | 表、数式、フォーム | GPU推奨 | ○ | olmOCR-Bench 76.1±1.1 |
+| **MinerU** | PDF、画像、Office | 独自ライセンス。追加条件あり | 109言語OCR | 数式、読み順 | GPU推奨 | ○ | 要法務確認 |
+| **olmOCR** | PDF、画像 | Apache-2.0 | 英語中心 | スキャンOCR | GPU | ○ | olmOCR-Bench 82.4±1.1 |
+| **PyMuPDF4LLM** | PDF | AGPL-3.0または商用 | 公式比較値なし | Markdown | CPU | ◎ | 要法務確認 |
 
-### 4-2. 単機能の堅実な選択肢（フォールバック）
+Markerの重みは modified AI Pubs Open Rail-M です。研究、個人、資金調達額または売上が200万USD未満のスタートアップは無償です。それ以外の商用利用には別ライセンスが必要です。READMEにはGPL表記も残るため法務確認します。
 
-- **HTML:** Trafilatura（Apache-2.0、本文抽出の品質に定評）、Pandoc（GPL-2.0、CLI 利用なら実務上の懸念は小さい）
-- **PPTX:** python-pptx（MIT）
-- **PDF:** pdfminer.six / pypdf / pdfplumber（いずれも MIT 系。構造化 Markdown は出さない）
+MinerUは2026年4月に独自ライセンスへ変更しました。MAUが1億を超える場合、または月間総収益が2,000万USDを超える場合は別ライセンスが必要です。第三者向けオンラインサービスには表示義務があります。HTMLは別プロジェクトのMinerU-HTMLが扱います。
+
+olmOCR-Benchの値は、olmOCR v0.4.0が82.4±1.1、Marker 1.10.1が76.1±1.1です。英語中心の評価です。
+
+### 4-2. 単機能の選択肢
+
+- HTML
+  - Trafilatura: Apache-2.0
+  - Pandoc: GPL-2.0
+- PPTX
+  - python-pptx: MIT
+- PDF
+  - pdfminer.six、pypdf、pdfplumber: MIT系
+  - 構造化 Markdown は出力しない。
 
 ### 4-3. 評価上の注意
 
-1. **公開評価は対象言語・文書種・版・指標が異なるため、順位を直接比較できません。** olmOCR-Bench は英語中心の OCR ベンチマークで、日本語変換の優劣を示しません。OmniDocBench v1.0（CVPR 2025）は 1,651 PDF ページ／10 文書種／5 レイアウト／5 言語で、28 種の block-level と 4 種の span-level 注釈を含みます。各値を統合した「中立的序列」は存在しないため、**本件の日本語コーパスで同一条件比較**します。
-2. **画像として埋め込まれた表の OCR は、どのエンジンでも依然として大きな課題**が残る、という点は各所で共通した見解です。
-3. **ライセンスが選定を強く縛ります。** コードとモデル重みでライセンスが異なる場合がある点に注意してください（Marker が典型）。**本体コードについては** MIT/Apache-2.0（Docling・MarkItDown・Unstructured OSS・Tika・olmOCR）が安全圏ですが、**モデル重みは使用するモデルごとに元パッケージのライセンスを個別確認**してください。AGPL デュアル（PyMuPDF4LLM）・独自条項（MinerU）・重みに制限（Marker）は**採用前に法務確認**が必要です。本レポートでは除外せず、条件を明記した上で候補に残しています。
+1. 公開評価から日本語性能の順位は決めない。
+   - olmOCR-Bench は英語中心である。
+   - OmniDocBench v1.0 は1,651ページ、10文書種、5レイアウト、5言語を含む。
+   - OmniDocBenchには28種のblock注釈と4種のspan注釈がある。
+   - 評価条件が異なるため、本件コーパスで比較する。
+2. 画像化された表は、どの OCR でも難しい。
+3. コードとモデル重みのライセンスを分けて確認する。
+   - Docling、MarkItDown、Unstructured OSS、Tika、olmOCRの本体コードは MIT または Apache-2.0 である。
+   - モデル重みはモデルごとに確認する。
+   - PyMuPDF4LLM、MinerU、Markerは採用前に法務確認する。
 
 ---
 
 ## 5. Docling の Chunking とフレームワーク連携
 
-Docling は変換だけでなく**チャンカーを標準搭載**しており、これが本システムにとって変換品質と並ぶ価値になります。
+Docling は文書変換とチャンキングを提供します。
 
 ### 5-1. HierarchicalChunker
 
-`DoclingDocument` の構造情報から**検出した文書要素ごとに1チャンク**を生成します。リスト項目は既定でマージ（`merge_list_items=True`）、見出し・キャプションをメタデータとして付与します。
+`DoclingDocument` の要素ごとにチャンクを生成します。既定ではリスト項目をまとめ、見出しとキャプションをメタデータへ追加します。
 
 ### 5-2. HybridChunker
 
-階層チャンキングの上に**トークナイザ認識のリファインメント**を掛ける2パス方式です（①超過したチャンクのみ分割 → ②文脈が一致する小チャンク同士を結合）。
+階層チャンキングの結果をトークン数で調整します。
+
+1. 上限を超えたチャンクを分割する。
+2. 文脈が同じ小さなチャンクを結合する。
 
 | パラメータ | 役割 |
 |---|---|
-| `tokenizer` | `BaseTokenizer` 実装を渡す（**モデル名の文字列は不可**）。**埋め込みモデルと揃える** |
-| `max_tokens` | チャンクあたりトークン上限。**`HuggingFaceTokenizer` 側に設定**する（`HybridChunker` の引数ではない） |
-| `merge_peers` | 小さすぎる隣接チャンクを結合（既定 `True`） |
-| `repeat_table_header` | 表がチャンクをまたぐ際にヘッダ行を再掲（既定 `True`） |
-| `omit_header_on_overflow` | 上限超過行でヘッダを省き、行の完全性を優先（既定 `False`） |
+| `tokenizer` | 埋め込みモデルに対応する `BaseTokenizer` 実装。モデル名の文字列は不可 |
+| `max_tokens` | トークン上限。`HuggingFaceTokenizer` 側に設定 |
+| `merge_peers` | 小さな隣接チャンクを結合。既定 `True` |
+| `repeat_table_header` | 分割した表へヘッダを再掲。既定 `True` |
+| `omit_header_on_overflow` | 上限超過時にヘッダを省略。既定 `False` |
 
 ```python
 from transformers import AutoTokenizer
@@ -125,15 +171,21 @@ for c in chunks:
     text = chunker.contextualize(chunk=c)  # メタデータ強化表現を埋め込みへ
 ```
 
-**既知課題への対応**（[構成要素解説](../06-tuning/README.md) §2 と対応）:
+主な効果は次のとおりです。
 
-- 「**chunk_size は文字数、モデル上限はトークン数**。日本語は 1 文字が 1〜2 トークンに割れ、末尾が黙って切り捨てられる」→ トークナイザ指定で**トークン基準の分割**となり原理的に解消。
-- 「**文書タイトル > 章 > 節 をチャンク先頭に付記すると精度が上がる**」→ `contextualize()` は検出済みの見出し・キャプション等を含む**メタデータ強化表現**を返す。正しいタイトル階層になるかは**見出し検出・階層推定の精度に依存**する。
-- 現行の `RecursiveCharacterTextSplitter` は表構造を認識しないため、**表内に境界が来るとヘッダと行が分離し得る**。Docling が表構造を正しく認識できた場合、`repeat_table_header` は各分割チャンクへヘッダを再掲できる（誤認識された表を修復する機能ではない）。
+- トークン上限を守る。
+  - 現行 splitter は文字数で分割する。
+  - `HybridChunker` は埋め込みモデルのトークナイザで分割する。
+- 見出し文脈を追加する。
+  - `contextualize()` が検出済みの見出しとキャプションを追加する。
+  - 品質は見出し検出と階層推定に依存する。
+- 表ヘッダを再掲する。
+  - `repeat_table_header` が分割後の各チャンクへヘッダを追加する。
+  - 表を誤認識した場合は修復できない。
 
 ### 5-3. LangChain 連携（`langchain-docling`）
 
-`DoclingLoader` のパラメータは `file_path` / `converter` / `convert_kwargs` / `export_type` / `md_export_kwargs` / `chunker` / `meta_extractor`。2モードあり、いずれも `lazy_load()` に対応します。
+`DoclingLoader` は `DOC_CHUNKS` と `MARKDOWN` の2モードを提供します。どちらも `lazy_load()` に対応します。
 
 ```python
 # DOC_CHUNKS（既定）: 変換とチャンキングを一気通貫
@@ -143,7 +195,7 @@ from langchain_docling.loader import ExportType
 loader = DoclingLoader(
     file_path="whitepaper.pdf",
     export_type=ExportType.DOC_CHUNKS,
-    chunker=chunker,   # §5-2 で構築した HybridChunker（HuggingFaceTokenizer を保持）
+    chunker=chunker,   # 上で構築した HybridChunker
 )
 docs = loader.load()   # 1 chunk = 1 LangChain Document
 
@@ -151,59 +203,81 @@ docs = loader.load()   # 1 chunk = 1 LangChain Document
 loader = DoclingLoader(file_path="whitepaper.pdf", export_type=ExportType.MARKDOWN)
 ```
 
-**`dl_meta` メタデータ（出典提示の評価軸）:** `doc_items`（`self_ref` / `parent` / `label` / `prov` に **`page_no`・`bbox`・`charspan`**）、`headings`、`origin`（`mimetype` / `binary_hash` / `filename`）。**ページ番号と座標つきの根拠提示**が可能になり、回答の出典表示を「ファイル名」から「何ページのどこ」へ精緻化できます。現行の `source` / `group` と併存させられるかは検証対象です。
+`dl_meta` は次の情報を保持します。
+
+- `doc_items`: `self_ref`、`parent`、`label`、`prov`
+- `prov`: `page_no`、`bbox`、`charspan`
+- `headings`
+- `origin`: `mimetype`、`binary_hash`、`filename`
+
+この情報を使うと、ページ番号と座標を出典にできます。`source`、`group` と併存できるかは PoC で確認します。
 
 ### 5-4. LlamaIndex 連携（参考）
 
-`llama-index-readers-docling`（`DoclingReader`）＋ `llama-index-node-parser-docling`（`DoclingNodeParser`）。`export_type="json"` で **DoclingDocument を可逆シリアライズ**、`"markdown"` は非可逆です。本リポジトリは LangChain 系のため直接は使いませんが、**「可逆 JSON で構造を保存できる」という事実が §6 の案B を成立させます**。
+LlamaIndex では `DoclingReader` と `DoclingNodeParser` を利用できます。JSON は DoclingDocument を可逆保存できます。Markdown は非可逆です。
+
+本リポジトリでは LlamaIndex を使いません。ただし、JSONによる可逆保存は案Bでも利用できます。
 
 ---
 
-## 6. チャンキング方式のトレードオフ（案A / 案B — 実測で決定）
+## 6. チャンキング方式
 
-**前提となる制約: `HybridChunker` の恩恵は `DoclingDocument` を保持している間しか得られません。** 前処理で Markdown に書き出した時点で構造情報は失われ、`MarkdownHeaderTextSplitter`（見出しのみ）に劣化します。ただし可逆 JSON シリアライズがあるため、両立の道があります。
+`HybridChunker` には DoclingDocument が必要です。Markdownだけを保存すると、レイアウトや表の構造情報を失います。JSONを併存すれば構造を保持できます。
 
-| 観点 | **案A: `.md` のみ ＋ 見出し分割** | **案B: `.md` ＋ JSON 併出力 ＋ HybridChunker** |
+| 観点 | 案A: MD＋見出し分割 | 案B: MD＋JSON＋HybridChunker |
 |---|---|---|
 | 前処理出力 | `processed/**/*.md` | `processed/**/*.md` と DoclingDocument JSON |
 | ingest 側の分割 | `MarkdownHeaderTextSplitter` → `RecursiveCharacterTextSplitter` | JSON から `HybridChunker` |
-| ingest 依存追加 | **なし**（既存 `TextLoader` 経路） | `docling-core[chunking]`（transformers・semchunk 等の**推移依存を含む**。パースモデル・torch の直接要求はないが、増分は lock 後に実測） |
-| トークン基準分割 | ✕（`from_huggingface_tokenizer` で個別対処は可能） | ◎ 標準機能 |
-| 見出し文脈の付与 | △ 手実装が必要 | ◎ `contextualize()`（精度は見出し検出に依存） |
-| 表のチャンク跨ぎ | ✕ 表内に境界が来るとヘッダと行が分離し得る | ◎ `repeat_table_header`（表認識が正しい場合） |
+| ingest 依存追加 | なし | `docling-core[chunking]`と推移依存。増分は実測 |
+| トークン基準分割 | 個別実装が必要 | 標準機能 |
+| 見出し文脈の付与 | 手実装が必要 | `contextualize()`。精度は見出し検出に依存 |
+| 表のチャンク跨ぎ | ヘッダと行が分離し得る | `repeat_table_header`。表認識が前提 |
 | `page_no` / `bbox` 出典 | ✕ 失われる | ◎ `dl_meta` で保持 |
-| 成果物容量 | 小（md のみ） | 大（JSON 併存。容量は要計測） |
-| スキーマ互換性 | 影響なし | **DoclingDocument schema 更新の影響を受ける**。旧 JSON の読込互換性を版更新時に確認 |
+| 成果物容量 | 小 | 大。要計測 |
+| スキーマ互換性 | 影響なし | DoclingDocument更新の影響あり |
 | 変換の追跡・再現 | md に出典を焼き込み | 変換設定・モデル revision・schema 版を JSON 側に記録可能 |
 | 再変換コスト | 版更新時は md 再生成のみ | 版更新時に JSON 再生成が必要になる場合あり |
 | 失敗時の調査 | md を目視すれば良い | JSON 構造の理解が必要 |
 | セキュリティ / ロールバック | 影響小 | 依存増分の SBOM/CVE 確認、旧構成への戻し手順が必要 |
 
-いずれの案も**パース本体（`docling` ＋ torch ＋レイアウト/表モデル）は取得用 venv に閉じたまま**である点は共通です。案B の成立性は、**lock 後のイメージ差分・最大 RSS・CVE・オフライン起動試験**で判定し、**採否はそれらの実測と Hit Rate / MRR 等の比較で決定します**（§9）。
+どちらの案でも、パース本体は取得用 venv に置きます。
 
-### 6-2. ワークフローパターン整理（補足）
+案Bは次の結果で採否を決めます。
 
-Docling を使ったコーパス取り込みの全体像を、**パース軸（横断的な選択肢）**と**実行・受け渡しパターン**の 2 階層で整理します。案A/案B（§6）はこのうち P1/P2 に対応します。
+- イメージ増分
+- 最大 RSS
+- SBOMとCVE
+- オフライン起動
+- RAG評価
 
-**パース軸:** 既定パイプライン（Heron レイアウトモデル＋TableFormer）／ VLM パイプライン（self-hosted vLLM 経由、§7）。**どの実行パターンにも重ねられる独立軸**であり、通常資料は既定、スキャン・崩れる資料のみ VLM という資料単位の使い分けが基本です。
+### 6-2. ワークフローパターン
+
+ワークフローは、パース方式と受け渡し方式に分けて選びます。
+
+- 既定パイプライン
+  - HeronとTableFormerを使う。
+  - 通常資料へ適用する。
+- VLMパイプライン
+  - self-hosted vLLMを使う。
+  - スキャンや変換に失敗する資料へ限定する。
 
 | パターン | パース | 受け渡し・分割 | ingest 側の依存追加 | provenance（page_no/bbox） | 位置づけ |
 |---|---|---|---|---|---|
-| **P1（案A）** | 既定 | 前処理で MD 出力 → 既存 TextLoader＋splitter | **追加なし** | 原則失われる | **最小変更候補**。案B と §9 の PoC で比較して決定 |
-| **P2（案B）** | 既定 | 前処理で MD＋DoclingDocument JSON → HybridChunker | `docling-core[chunking]`＋トークナイザ（増分は要実測） | **条件付きで保持**（主に PDF。生成とチャンクへの伝播は PoC で確認） | **高機能候補**。トークン基準分割・文脈付与・provenance 保持が可能。RAG 品質への効果は PoC で判定 |
-| **P3（Loader＋chunks）** | 既定 | ingest 内で `DoclingLoader(DOC_CHUNKS)`＋**明示指定した** `chunker=HybridChunker(...)`（e5 用トークナイザ・512 上限は既定では保証されない） | Docling 本体＋torch＋モデル（重い） | 条件付きで保持 | 一気通貫・中間成果物なし。依存肥大とフル再構築毎の再変換が課題。資料単位制御には追加実装が必要で前処理方式より複雑（§8） |
-| **P4（Loader＋MD）** | 既定 | ingest 内で `DoclingLoader(MARKDOWN)` → 自前 splitter | Docling 本体（重い） | 原則失われる | 重い依存を抱えるのに HybridChunker の利点を使わないため利点が限定的 |
-| **P6（取り込み先分割）** | 任意 | 未分割 MD をアップロード → **取り込み先が内部でチャンク分割**（Open WebUI の Focused Retrieval 等） | 取り込み先依存 | 通常失われる | **上流で分割しない**だけで、ワークフロー全体ではチャンキングは行われる。案1b の標準経路 |
-| **P7（Full Context）** | 任意 | 文書**全文**を直接コンテキストへ投入（Open WebUI の Full Context 等）。真にチャンキングなし | 取り込み先依存 | 検索用には通常使わない | 小規模文書向け。ベクトル検索を経ない別方式であり、通常の RAG とは区別する |
+| P1 案A | 既定 | MD → 既存 TextLoaderとsplitter | なし | 原則失う | 最小変更。案Bと比較 |
+| P2 案B | 既定 | MD＋JSON → HybridChunker | `docling-core[chunking]`等 | 条件付きで保持 | 高機能。効果と依存増分を実測 |
+| P3 Loader＋chunks | 既定 | `DOC_CHUNKS`＋明示したHybridChunker | Docling本体、torch、モデル | 条件付きで保持 | 中間成果物なし。依存と再変換が課題 |
+| P4 Loader＋MD | 既定 | `MARKDOWN` → 自前splitter | Docling本体 | 原則失う | 重い依存に対して利点が少ない |
+| P6 取り込み先分割 | 任意 | 未分割MD → 取り込み先で分割 | 取り込み先依存 | 通常失う | Open WebUI案1bの標準経路 |
+| P7 Full Context | 任意 | 文書全文をコンテキストへ投入 | 取り込み先依存 | 検索には不使用 | 小規模文書向け。通常RAGとは別方式 |
 
-**パース軸の重ね方（P5）:**
+VLMはP5として、上記の受け渡し方式と組み合わせます。
 
 | パース経路 | 適用対象 | 組み合わせ | 備考 |
 |---|---|---|---|
-| 既定パイプライン | 通常資料（デジタル PDF/HTML/PPTX） | P1〜P7 すべて | `do_ocr` は既定で有効。デジタル PDF では `do_ocr=False` 系列も測定（§9-3） |
-| VLM パイプライン（P5） | スキャン PDF・表崩れの激しい資料**のみ** | P1〜P7 すべて（前処理段で実行するなら P1/P2 と併用が自然） | 低速・GPU 負荷大。provenance はモデル出力形式に依存。vLLM の serve 構成・served model 名一致・認証は PoC 項目（§7・§9-5） |
+| 既定パイプライン | 通常資料 | P1〜P7 | デジタルPDFではOCR無効も測定 |
+| VLMパイプライン P5 | スキャン、変換失敗資料 | P1〜P7 | 低速でGPU負荷が高い。provenanceは出力形式に依存 |
 
-本リポジトリの構造（バッチ取得 → 段階配置 → フル再構築、§8）では、実質の意思決定は **P1 か P2 か**（＋崩れる資料への P5 適用可否）に集約されます。P3/P4 が候補落ちする理由は §8 の通りです。
+本リポジトリではP1とP2を主に比較します。必要な資料だけP5を適用します。
 
 ---
 
@@ -211,19 +285,31 @@ Docling を使ったコーパス取り込みの全体像を、**パース軸（�
 
 ### 妥当性
 
-- **表・段組み・読み順:** pypdf は表・多段組の論理構造復元を目的としないため読み順が崩れ得ます（[download.md](download.md) §2 の検収でも目視確認を要求）。Docling はレイアウト・読み順・表構造を明示的に推定するため**改善が期待できます**。ただし Docling にも複雑表・見出し階層・縦書きでの失敗はあり、**白書/IPA での現行 PyPDFLoader 比の改善率を実測するまで優位性は未確定**です。
-- **多形式の単一 API:** PDF/HTML/PPTX/DOCX/XLSX を `DocumentConverter` 一つで扱え、形式ごとにツールを増やさずに済みます（スコープ拡大に対する最大の利点）。
-- **チャンキングまで一貫:** §5 の通り、変換とチャンキングが同じ文書モデル上で完結します。
+- 表、段組み、読み順の改善が期待できる。
+  - pypdf は論理構造を復元しない。
+  - Docling はレイアウト、読み順、表構造を推定する。
+  - 優位性は本件コーパスで実測する。
+- 複数形式を単一 API で扱える。
+  - PDF、HTML、PPTX、DOCX、XLSXに対応する。
+- 変換とチャンキングで同じ文書モデルを使える。
 
 ### 実現性
 
-- 既存 3 前処理スクリプトと同型で追加可能。MIT・Python 3.10+・ローカル実行で、`~=`（マイナー系互換）ピン運用・隔離ネットワーク前提と整合します。
-- **OCR は既定で有効（`do_ocr=True`）です。** デジタル PDF では OCR は本来不要のため、性能比較では `PdfPipelineOptions(do_ocr=False)` を明示した系列も測定します。
+- 既存の前処理と同じ構成で追加できる。
+  - MIT、Python 3.10以上、ローカル実行に対応する。
+  - 隔離ネットワークと依存ピンの運用に適合する。
+- OCRは既定で有効である。
+  - デジタルPDFでは `do_ocr=False` も測定する。
 
 ### OCR / スキャン資料への対応（LLM 利用の可否）
 
-- **Docling の「OCR エンジン」枠に LLM は指定できません。** OCR 枠には Tesseract、EasyOCR、RapidOCR、OcrMac、SuryaOCR 等の OCR 実装を指定します。利用可能な実装は固定する Docling 版で再確認してください。
-- ただし**別系統の VLM パイプライン**で **OpenAI 互換エンドポイント**を指定できます。これは OCR レイヤの差し替えではなく、**パース全体を VLM に置き換える end-to-end 経路**です。現行の書き方は新ランタイム方式（`VlmConvertOptions.from_preset` ＋ `ApiVlmEngineOptions`）で、`ApiVlmOptions` は legacy 系です。以下は**概念例**であり、PoC で版固定して動作確認します（公式生成サンプルには旧引数名 `runtime_type` が残っている場合があります。固定版の API リファレンスと実動作で `engine_type` 等の引数名を確認してください）:
+- OCRエンジンにLLMは指定できない。
+  - Tesseract、EasyOCR、RapidOCR、OcrMac、SuryaOCRなどを使う。
+  - 対応エンジンは固定版で確認する。
+- VLMは別のパース経路として利用する。
+  - OpenAI互換エンドポイントを指定できる。
+  - パース全体をVLMへ置き換える。
+  - 次のコードは概念例である。固定版で動作確認する。
 
 ```python
 import os
@@ -266,46 +352,73 @@ converter = DocumentConverter(
 )
 ```
 
-- **本システムでは外部 API 送信を回避し、既に運用中の self-hosted vLLM の OpenAI 互換エンドポイントに向ける**ことで、オフラインを保ったまま VLM パースが可能です。ただし、**vLLM 側が VLM（画像入力対応モデル）を実際に serve できる構成か、preset が指定するモデルと vLLM 側のモデル名が一致するか、認証ヘッダの扱い**は PoC 項目として検証が必要です。ページ画像を 1 枚ずつ推論するため低速・高負荷であり、**通常は既定パイプライン、崩れる資料のみ VLM** という使い分けを推奨します。
+公式生成サンプルには旧引数 `runtime_type` が残る場合があります。固定版のAPIリファレンスでは `engine_type` を確認します。
+
+本システムではself-hosted vLLMへ接続します。外部APIは使いません。
+
+PoCでは次を確認します。
+
+- VLMモデルをserveできること
+- presetとserved model名が一致すること
+- 認証ヘッダが有効なこと
+
+VLMは低速でGPU負荷が高いため、変換に失敗する資料へ限定します。
 
 ### リスク・留意点
 
 | 項目 | 内容 | 対応方針 |
 |---|---|---|
-| 依存の重さ | torch＋レイアウト/表モデルで数百 MB〜GB 級 | パース本体は**取得用 venv のみ**。ingest コンテナ（`python:3.11-slim`）には入れない（案B でも `docling-core[chunking]` のみ、増分は要実測） |
-| オフライン運用 | 初回にモデル自動ダウンロード。NAT は取得時のみ開放 | 取得フェーズでモデルを**事前 prefetch** しキャッシュ固定。[事前準備](prerequisites.md) に手順追記 |
-| スループット | 単一ノード処理。数百ページで分単位 | `processed/` に永続化するバッチ前処理のため ingest 毎の再実行にならず許容。mtime スキップで再実行も安価 |
-| 抽出の当たり外れ | 資料により品質差 | 現行 PyPDFLoader 出力との**サンプル比較**を検収に組込み、崩れる資料のみ他ツール/VLM に切替える判断余地を残す |
-| 依存ピン | `~=` マイナー系互換の運用 | PoC で確認した具体版を **micro まで指定**してピンする（例 `docling~=2.115.0`。`~=2.115` は 2.x 全体を許容するため使用しない）。torch も CPU 版で明示ピン。API は版依存のため PoC で版固定して動作確認 |
+| 依存の重さ | torchとモデルで数百MB〜GB | パース本体は取得用venvに置く。案Bの増分は実測する |
+| オフライン運用 | 初回にモデルを取得 | NAT開放中にprefetchし、キャッシュを固定する |
+| スループット | 数百ページで分単位 | 出力を永続化し、mtimeで再処理を省く |
+| 抽出品質 | 資料ごとに差がある | PyPDFLoaderと比較し、必要な資料だけ別経路へ切り替える |
+| 依存ピン | `~=`を使用 | microまで指定する。例は `docling~=2.115.0` |
 | 案1b | Open WebUI は `ingest.py`/`documents/` を持たない | 生成した Markdown を UI/API 経由でアップロードする運用として明記 |
-| 表記正規化 | NFKC/neologdn は分割前に一度だけ（[構成要素解説](../06-tuning/README.md) §2） | Docling 出力直後（前処理段）で正規化する位置づけとする |
+| 表記正規化 | NFKC/neologdnは分割前に一度だけ実行 | Docling出力直後に正規化する |
+
+`~=2.115` は2.x全体を許容します。マイナー系列を固定する場合は使いません。
 
 ---
 
-## 8. なぜ Loader 置換ではなく前処理ステップか
+## 8. 前処理ステップを選ぶ理由
 
 | 観点 | 前処理ステップ（推奨） | ingest 時 Loader 置換 |
 |---|---|---|
-| 依存の分離 | 重いパース依存を取得用 venv に閉じ込め、独自 ingest を持つ 3 案（案1/2/3。案1b は独自 ingest なし）のイメージを軽量維持 | 3 イメージすべてが肥大化（torch は現状 案1 のみ） |
-| 冪等性・再現性 | `processed/` に永続化＋mtime スキップ。フル再構築のたびに変換が走らない | 素朴な実装では再構築のたびに全文書を再変換（変換キャッシュの実装で緩和は可能） |
-| 検証の粒度 | 現行 Loader 出力との比較検収を前処理段で実施し、**崩れる資料だけ差し替え**可能 | 資料単位のルーティングを実装すれば可能だが、前処理段より複雑 |
-| **多形式対応** | 全形式を `*.md` に正規化 → **ingest は既存 `.md` 経路のみで完結**（`.html`/`.pptx` の Loader 追加が不要） | `load_documents` に形式ごとの Loader/glob 追加が必要 |
+| 依存の分離 | パース依存を取得用venvへ分離 | 各ingestイメージへ依存を追加 |
+| 冪等性・再現性 | `processed/`へ保存し、mtimeでスキップ | キャッシュがなければ再構築時に再変換 |
+| 検証の粒度 | 前処理結果を資料単位で検収 | 資料単位の制御に追加実装が必要 |
+| 多形式対応 | Markdownへ統一し、既存経路で取り込む | 形式別のLoaderとglobが必要 |
 | 既存パターン | `preprocess_egov.py` / `preprocess_wikipedia.py` と同型で運用統一 | 既存の前処理規約から外れる |
-| オフライン | モデル prefetch を NAT 開放中の取得フェーズに自然に寄せられる | ingest 実行時にモデル取得が必要になりうる |
+| オフライン | NAT開放中にモデルを取得 | ingest時のモデル取得対策が必要 |
 
-本リポジトリは**バッチ取得 → 段階配置 → フル再構築**の運用のため、前処理段が構造的に合致します。ただし、**低遅延の増分更新、原本とインデックスの強い一貫性、変換成果物を永続管理したくない要件**が生じた場合は、キャッシュ付き Loader 方式も候補になります。
+本リポジトリはバッチ取得、段階配置、フル再構築の順で運用します。このため前処理方式を推奨します。
+
+次の要件がある場合は、キャッシュ付きLoader方式も検討します。
+
+- 低遅延の増分更新
+- 原本とインデックスの強い一貫性
+- 変換成果物を保存しない運用
 
 ---
 
 ## 9. 検証方法（採用可否の判断根拠）
 
-> PoC 実施に必要な一時的な変換スクリプト・評価ハーネス・依存 lock・モデル prefetch は PoC 期間中に隔離 venv 上で作成する（本番統合とは区別。冒頭注記参照）。合格条件・閾値・評価手順書は **PoC 開始前に確定**し、評価後に変更しない。
+> PoCは隔離venvで実行します。合格条件、閾値、評価手順は開始前に固定します。
 
 ### 9-1. 評価資料と正解データの事前固定
 
-- 日本語デジタル PDF・スキャン PDF・縦書き・2段組・複雑表を**各 10 ページ以上**、白書/IPA コーパスから事前に選定して固定する（恣意的な事後選定を避ける）。
-- 選定した評価ページについて、**正解データを事前に人手注釈**する: 文字転記、読み順付き block ID、見出し level、表の正規化 HTML、`page_no`/bbox。
-- 表の指標は **TEDS（文字内容込み）と TEDS-Struct（構造のみ）のどちらを用いるかを事前に固定**し、Markdown → HTML 変換規則、結合セル・空セルの扱いを評価手順書に定義する（TEDS は HTML ツリー比較の指標であり、Markdown 出力をそのまま投入できない）。
+- 評価資料を固定する。
+  - デジタルPDF、スキャンPDF、縦書き、2段組、複雑表を各10ページ以上選ぶ。
+- 正解データを人手で作る。
+  - 文字転記
+  - 読み順付きblock ID
+  - 見出しlevel
+  - 表の正規化HTML
+  - `page_no`とbbox
+- 表の評価方法を固定する。
+  - TEDSまたはTEDS-Structを選ぶ。
+  - MarkdownからHTMLへの変換規則を定める。
+  - 結合セルと空セルの扱いを定める。
 
 ### 9-2. 測定指標
 
@@ -313,59 +426,105 @@ converter = DocumentConverter(
 |---|---|---|
 | 文字抽出 | CER、欠落率、重複率 | 正解転記との比較 |
 | 読み順 | block pair accuracy | 読み順付き block 注釈が必要 |
-| 表 | TEDS または TEDS-Struct（§9-1 で固定） | 正解 HTML・変換規則の事前定義が必要 |
+| 表 | TEDS または TEDS-Struct | 正解HTMLと変換規則が必要 |
 | 見出し | level 付き precision/recall | 見出し注釈が必要 |
-| 出典 | `page_no` 正解率、bbox IoU（閾値を事前設定） | **構造出力を持つ候補（案B 系）のみ**。合否は機能検証として別判定 |
-| RAG | Evidence Recall@4、MRR、nDCG | **本番ゴールデンデータ**（下記）で paired 比較 |
+| 出典 | `page_no`正解率、bbox IoU | 構造出力を持つ候補のみ。別に合否判定 |
+| RAG | Evidence Recall@4、MRR、nDCG | 本番ゴールデンデータでpaired比較 |
 | 性能 | pages/s、最大 RSS、成果物サイズ、コンテナイメージ増分 | 同一 CPU・同一資料・同一 OCR 条件 |
 
-**RAG 評価のデータ:** `05-evaluation` のサンプルゴールデンデータ（10 件）は**動作確認にのみ用いる**。統計的比較には**本番ゴールデンデータを別途作成**し、固定した同一質問集合で Evidence Recall@4 を paired 比較する。必要標本数・信頼区間の水準は、ベースライン分布と検出したい最小差に基づき PoC 開始前に確定する。
+サンプルゴールデンデータ10件は動作確認だけに使います。統計比較には本番ゴールデンデータを作成します。
+
+同じ質問集合で Evidence Recall@4 をpaired比較します。標本数と信頼区間は、ベースラインと最小検出差から事前に決めます。
 
 ### 9-3. 比較系列
 
-- **ベースライン: 現行 `PyPDFLoader` の出力を保存して比較**する（`pdftotext` は Poppler 系の**別**ベースラインとして分離。現行システムの代用にしない）
-- Docling（既定パイプライン。`do_ocr=True`/`do_ocr=False` の両系列）
-- 軽量比較対象: MarkItDown ／ 高機能比較対象: MinerU（ライセンス確認後）
-- チャンキング: pypdf ベースライン・案A・案B の3系列で比較
+- パース方式
+  - 現行 `PyPDFLoader`
+  - `pdftotext`
+  - Docling既定パイプライン。OCR有効と無効を測定
+  - MarkItDown
+  - MinerU。ライセンス確認後に実施
+- チャンク方式
+  - pypdfベースライン
+  - 案A
+  - 案B
 
-### 9-4. 合格条件（枠組み。閾値は PoC 開始前に確定する）
+`pdftotext` は別ベースラインとして扱います。現行システムの代用にはしません。
 
-指標は**必須条件**と**参考条件**に分け、指標ごとに絶対閾値またはベースライン差の**非劣性マージン**を事前設定する。複数指標が相反した場合の判定規則（必須条件の全充足を優先）も事前に定める。
+### 9-4. 合格条件
 
-- **必須条件（例）:**
-  - 評価資料内で重大欠落（節単位の本文欠落）0 件
-  - CER が現行 pypdf 比で非劣性（マージンは事前設定）
-  - 本番ゴールデンデータの Evidence Recall@4 が有意に改善（最小検出差は標本設計とともに事前確定。「+5 ポイント」は目安であり、標本数が不足する場合は目標値を再設計する）
-- **参考条件（例）:**
-  - TEDS / 読み順 / 見出し指標の改善（**表構造を出力できる候補間のみ**比較。PyPDFLoader は表構造・bbox を出力しないため同一指標での全系列比較はできない）
-  - bbox IoU は案B の機能検証として合否を別判定
+閾値と非劣性マージンはPoC開始前に設定します。必須条件をすべて満たすことを優先します。
+
+- 必須条件
+  - 節単位の本文欠落が0件
+  - CERが現行pypdfに対して非劣性
+  - Evidence Recall@4が有意に改善
+- 参考条件
+  - TEDS、読み順、見出し指標が改善
+  - bbox IoUが基準を満たす
+
+最小検出差は標本設計と同時に決めます。5ポイント改善は目安です。表構造とbboxは、対応する候補間だけで比較します。
 
 ### 9-5. その他の検証
 
-1. **出典提示:** 案B で `dl_meta` の `page_no` / `bbox` がチャンクまで到達するか、**現行の `source` / `group` メタデータと併存できるか**（案2/3 の `assign_group_metadata` の fail-closed 挙動と衝突しないか）を確認。
-2. **オフライン再現:** モデル prefetch 済みキャッシュで NAT 閉塞状態でも前処理が完走することを確認（トークナイザの `local_files_only=True` 動作を含む）。
-3. **案B の成立性:** lock 後のイメージ差分・最大 RSS・SBOM/CVE・オフライン起動試験。DoclingDocument schema の版互換も確認。
-4. **ライセンス確認:** MinerU（追加条項）・Marker（モデル重みの Rail-M、README の GPL 表記との不整合）は採用前に法務確認し、結果を本レポートに追記。
-5. **VLM 経路（該当時）:** vLLM 側の VLM serve 構成・preset モデル名との一致・認証ヘッダを検証（§7）。
+1. 出典提示
+   - `page_no`と`bbox`がチャンクへ到達すること
+   - `source`と`group`を維持すること
+   - `assign_group_metadata`と衝突しないこと
+2. オフライン再現
+   - NAT閉塞中に前処理が完走すること
+   - `local_files_only=True`で動作すること
+3. 案Bの成立性
+   - イメージ増分、最大RSS、SBOM、CVEを確認すること
+   - オフライン起動とJSONスキーマ互換性を確認すること
+4. ライセンス
+   - MinerUとMarkerを法務確認すること
+5. VLM
+   - VLMをserveできること
+   - presetとserved model名が一致すること
+   - 認証ヘッダが有効なこと
 
-### 9-6. HTML / PPTX の成立確認（定量評価の対象外）
+### 9-6. HTML / PPTX の成立確認
 
-HTML / PPTX は**形式対応の成立確認に限定**する。各形式のサンプルを事前固定し、以下を確認する（合否は目視チェックリストで記録）:
+HTMLとPPTXは定量評価しません。固定したサンプルを目視確認します。
 
-- **PPTX:** スライド順の保持、スピーカーノートの扱い、表、図中テキストの扱い
-- **HTML:** 本文抽出（ナビゲーション・フッタの除外）、表、見出し階層の保持
+- PPTX
+  - スライド順
+  - スピーカーノート
+  - 表
+  - 図中テキスト
+- HTML
+  - 本文抽出
+  - ナビゲーションとフッタの除外
+  - 表
+  - 見出し階層
 
-定量的な構造指標・合格条件を HTML/PPTX に拡張するかは、実コーパスに両形式が入った時点で再判断する。
+実コーパスに追加された場合は、定量評価の要否を再判断します。
 
 ---
 
-## 10. 採用時の統合設計（参考・未実装）
+## 10. 採用後の変更
 
-1. **新規 `04-corpus/scripts/preprocess_docs.py`**（[preprocess_egov.py](scripts/preprocess_egov.py) を雛形）
-   - `load_env`/`corpus.env` 読込、`--input-dir`/`--output-dir`、mtime スキップ
-   - `DocumentConverter().convert(path).document.export_to_markdown()` で PDF/HTML/PPTX を一括 `*.md` 出力。出力直後に `unicodedata.normalize("NFKC", …)`（+ neologdn）。出典（資料名・年度・配布 URL・利用条件）を先頭に付与
-   - 案B を採る場合は DoclingDocument JSON も併せて出力（変換設定・モデル revision・schema 版を記録）
-2. **`prepare_stage.sh` の source 変更:** whitepaper/ipa を `RAW_DIR` → `PROCESSED_DIR/{whitepaper,ipa}` に切替。HTML/PPT 由来の新グループもここに追加
-3. **チャンク分割:** 案A なら `split_documents` を `MarkdownHeaderTextSplitter`（`#/##/###`）→ `RecursiveCharacterTextSplitter`（既存 500/100・日本語セパレータ）の二段に。案B なら JSON から `HybridChunker`。いずれも `source`/`group` を保持。**3案の `load_documents`/`split_documents` は同等だが `common.py` 全体は同一ではない**（案1 は `E5Embeddings`/`build_embeddings` を持ち `assign_group_metadata` なし、案2/3 のみ同一）。案1 と案2/3 へ共通ロジックを個別反映し、案2/3 では `assign_group_metadata` との統合を追加確認する
-4. **依存追加:** `docling`（＋CPU 版 torch）を **`04-corpus/scripts/requirements.txt` のみ**に追加。案B では ingest 側に `docling-core[chunking]` を追加（増分実測後）
-5. **ドキュメント更新:** [download.md](download.md) §2/§3 の「前処理」節を更新、[README.md](README.md) / [scripts/README.md](scripts/README.md) に前処理ステップ追記、[構成要素解説](../06-tuning/README.md) §1/§2 から本レポートへリンク、[事前準備](prerequisites.md) にモデル prefetch 追記
+1. `preprocess_docs.py`を追加する。
+   - [preprocess_egov.py](scripts/preprocess_egov.py)を雛形にする。
+   - PDF、HTML、PPTXをMarkdownへ変換する。
+   - NFKCとneologdnで正規化する。
+   - 出典を追加する。
+   - 案BではDoclingDocument JSONも保存する。
+2. `prepare_stage.sh`を変更する。
+   - whitepaperとipaの入力元を`PROCESSED_DIR`へ切り替える。
+   - HTML、PPTX由来のグループを追加する。
+3. チャンク分割を変更する。
+   - 案AはMarkdown見出し分割と既存splitterを使う。
+   - 案BはJSONとHybridChunkerを使う。
+   - `source`と`group`を維持する。
+   - 案1と案2/3へ個別に反映する。
+4. 依存を追加する。
+   - 取得側に`docling`とCPU版torchを追加する。
+   - 案Bではingest側に`docling-core[chunking]`を追加する。
+5. 関連ドキュメントを更新する。
+   - [download.md](download.md)
+   - [README.md](README.md)
+   - [scripts/README.md](scripts/README.md)
+   - [構成要素解説](../06-tuning/README.md)
+   - [事前準備](prerequisites.md)
