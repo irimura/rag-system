@@ -1,12 +1,13 @@
 # 文書変換ツール選定 評価レポート（PDF / HTML / PPT → Markdown 前処理）
 
-> 本レポートは**候補比較の上で PoC 主候補を選定し、検証計画を定める**評価であり、採用の確定と実装は未着手です。前処理スクリプトの追加、`prepare_stage.sh` / `common.py` の改修、依存追加、各ドキュメント更新は、PoC 実測（§9）の合格をもって着手します。
+> 本レポートは**候補比較の上で PoC 主候補を選定し、検証計画を定める**評価であり、採用の確定は未定です。**本番統合**（`prepare_stage.sh` / `common.py` の改修、本番 `requirements.txt` への依存追加、各ドキュメント更新）は PoC 実測（§9）の合格をもって着手します。**PoC 実施そのもの**に必要な作業 —— 隔離した venv、一時的な変換スクリプト、依存 lock、モデル prefetch、評価ハーネス —— は PoC 期間中に作成し、使用版・モデル revision・lock を記録として保存します。
 >
 > 調査時点: 2026年7月。ライセンス条件・ベンチマーク値・API 仕様は変動するため、採用前に一次情報で再確認してください。コード例は版依存であり、PoC 時に版を固定して動作確認します。
 >
 > 改訂履歴:
 > - 2026-07-24 初版
-> - 2026-07-24 レビューエージェントの指摘を反映（Docling 現行 API への修正、OCR 既定値の訂正、無出典数値の削除、比較の対称化、測定可能な受け入れ基準の明文化）
+> - 2026-07-24 一次レビュー指摘を反映（Docling 現行 API への修正、OCR 既定値の訂正、無出典数値の削除、比較の対称化、測定可能な受け入れ基準の明文化）
+> - 2026-07-24 再レビュー指摘を反映（VLM API の引数名修正、認証ヘッダの追記、比較表の無出典評判の除去、正解注釈・非劣性マージン・形式別スコープの明確化、PoC 実装と本番統合の区別）
 
 ## 1. 背景と目的
 
@@ -18,7 +19,9 @@
 
 ### スコープ
 
-取り込み対象を **PDF / HTML / PPT を同等**に扱う前提とします。ここで重要な制約があります —— **現行 `load_documents` は `.pdf` / `.md` / `.txt` しか glob しておらず、`.html` / `.pptx` の取り込み経路がそもそも存在しません**。
+取り込み対象は **PDF / HTML / PPT の 3 形式**です。ここで重要な制約があります —— **現行 `load_documents` は `.pdf` / `.md` / `.txt` しか glob しておらず、`.html` / `.pptx` の取り込み経路がそもそも存在しません**。
+
+ただし品質検証の主対象は現行コーパスの実体である **PDF** とし、**HTML / PPTX は「形式対応の成立確認」に限定**します（§9-6）。定量的な構造指標・合格条件は PDF に対して定義します。
 
 ---
 
@@ -55,14 +58,14 @@
 
 | ツール | 入力形式（本件3形式） | ライセンス（コード / モデル重み） | 日本語・縦書き | 表・読み順 | CPU/GPU | オフライン適性 | 補助情報（普及度） |
 |---|---|---|---|---|---|---|---|
-| **Docling** (IBM) | PDF/HTML/PPTX ○（＋DOCX/XLSX 等） | MIT / モデルも許容的（要版確認） | 高い認識率との報告あり（要実測） | DocLayNet＋TableFormer で明示的に推定 | CPU 可・GPU で高速化 | ◎ ローカル実行・モデル事前取得可 | 約 63.7k star。LangChain/LlamaIndex/Haystack 統合 |
-| **MarkItDown** (Microsoft) | PDF/HTML/PPTX ○（＋音声/EPUB/メール等） | MIT | 未検証 | 画像・表の抽出は弱いとの報告 | CPU のみで可（GPU 不要） | ◎ 軽量 | 約 168.6k star、依存公開リポジトリ約 3,079 件（GitHub 概算） |
-| **Unstructured** | PDF/HTML/PPTX ○（30+ 形式） | OSS ライブラリ: Apache-2.0（別に商用 API/プラットフォームの提供あり） | 未検証 | 複雑レイアウトで列ずれ等の報告 | CPU 可 | ○（依存が多くデプロイは重め） | RAG 界隈で定番 |
-| **Apache Tika** | PDF/HTML/PPTX ○（1000+ 形式） | Apache-2.0 | 抽出自体は堅実 | **構造化 Markdown を出さない**（プレーンテキスト＋メタデータ） | CPU・軽量 | ◎（Java 必要） | Java 圏のデファクト。長期実績 |
-| **Marker** (Datalab) | PDF/画像/PPTX/DOCX/XLSX/HTML/EPUB ○ | コード: リポジトリ LICENSE は Apache-2.0（README に GPL 表記が残る不整合あり）/ **モデル重み: modified AI Pubs Open Rail-M** — 研究・個人・資金調達額または売上 2M USD 未満のスタートアップは無償、それ以外の商用利用は別ライセンス。**要法務確認** | 縦書きの公式対応表明なし。日本語単独の再現可能な精度値は現行公式情報で確認できず（要実測） | 表・数式・フォームに強いとの報告 | GPU 推奨 | ○ | olmOCR-Bench 76.1±1.1（Marker 1.10.1、英語中心） |
-| **MinerU** (OpenDataLab) | PDF/画像 ○＋現行版は DOCX/PPTX/XLSX も入力対象。HTML は別プロジェクト MinerU-HTML（本体と同一経路かは要確認） | **MinerU Open Source License**（Apache-2.0＋追加条項、2026年4月に旧 AGPL 系から変更）: 商用利用可能だが **MAU 1億超または月間総収益 2,000万 USD 超で別ライセンス**、第三者向けオンラインサービスには **MinerU 利用の表示義務**。**要法務確認** | CJK に強いとの報告（PaddleOCR＋独自レイアウトモデル、109 言語）。縦書き最強との評判は一次情報未確認（要実測） | 数式 LaTeX 化・多段組の読み順復元 | GPU 推奨 | ○ | 中国語圏中心に採用報告多数 |
-| **olmOCR** (AllenAI) | PDF/画像のみ | Apache-2.0 | 英語中心（日本語は要実測） | スキャン文書 OCR 特化 | GPU 前提 | ○ | olmOCR-Bench 82.4±1.1（olmOCR v0.4.0） |
-| **PyMuPDF4LLM** | PDF のみ | **AGPL-3.0 または別途商用ライセンス（デュアル）**。[構成要素解説](../06-tuning/README.md) §1 も注意喚起済み。**要法務確認** | pypdf より高品質との報告 | Markdown 出力あり | CPU・軽量 | ◎ | — |
+| **Docling** (IBM) | PDF/HTML/PPTX ○（＋DOCX/XLSX 等） | コード: MIT / **モデル重みは使用するモデルごとに元パッケージのライセンスを個別確認** | 公式の日本語比較値なし。§9 で実測 | DocLayNet＋TableFormer で明示的に推定（機構として持つ。品質は §9 で実測） | CPU 可・GPU で高速化 | ◎ ローカル実行・モデル事前取得可 | 約 63.7k star。LangChain/LlamaIndex/Haystack 統合 |
+| **MarkItDown** (Microsoft) | PDF/HTML/PPTX ○（＋音声/EPUB/メール等） | MIT | 公式の日本語比較値なし。§9 で実測 | レイアウト・表構造の推定機構なし（公式比較値なし。§9 で実測） | CPU のみで可（GPU 不要） | ◎ 軽量 | 約 168.6k star、依存公開リポジトリ約 3,079 件（GitHub 概算） |
+| **Unstructured** | PDF/HTML/PPTX ○（30+ 形式） | OSS ライブラリ: Apache-2.0（別に商用 API/プラットフォームの提供あり） | 公式の日本語比較値なし。§9 で実測 | 公式比較値なし。§9 で実測 | CPU 可 | ○（依存パッケージが多い） | RAG 界隈で定番 |
+| **Apache Tika** | PDF/HTML/PPTX ○（1000+ 形式） | Apache-2.0 | 公式の日本語比較値なし | **構造化 Markdown を出さない**（プレーンテキスト＋メタデータ） | CPU・軽量 | ◎（Java 必要） | Java 圏のデファクト。長期実績 |
+| **Marker** (Datalab) | PDF/画像/PPTX/DOCX/XLSX/HTML/EPUB ○ | コード: リポジトリ LICENSE は Apache-2.0（README に GPL 表記が残る不整合あり）/ **モデル重み: modified AI Pubs Open Rail-M** — 研究・個人・資金調達額または売上 2M USD 未満のスタートアップは無償、それ以外の商用利用は別ライセンス。**要法務確認** | 縦書きの公式対応表明なし。日本語単独の再現可能な精度値は現行公式情報で確認できず。§9 で実測 | 表・数式・フォームの変換機構を持つ（公式の日本語比較値なし） | GPU 推奨 | ○ | olmOCR-Bench 76.1±1.1（Marker 1.10.1、英語中心） |
+| **MinerU** (OpenDataLab) | PDF/画像 ○＋現行版は DOCX/PPTX/XLSX も入力対象。HTML は別プロジェクト MinerU-HTML（本体と同一経路かは要確認） | **MinerU Open Source License**（Apache-2.0＋追加条項、2026年4月に旧 AGPL 系から変更）: 商用利用可能だが **MAU 1億超または月間総収益 2,000万 USD 超で別ライセンス**、第三者向けオンラインサービスには **MinerU 利用の表示義務**。**要法務確認** | 109 言語 OCR（PaddleOCR）を持つが、日本語・縦書きの公式比較値なし。§9 で実測 | 数式 LaTeX 化・多段組の読み順復元の機構を持つ（品質は §9 で実測） | GPU 推奨 | ○ | — |
+| **olmOCR** (AllenAI) | PDF/画像のみ | Apache-2.0 | 英語中心（日本語の公式比較値なし） | スキャン文書 OCR 特化 | GPU 前提 | ○ | olmOCR-Bench 82.4±1.1（olmOCR v0.4.0） |
+| **PyMuPDF4LLM** | PDF のみ | **AGPL-3.0 または別途商用ライセンス（デュアル）**。[構成要素解説](../06-tuning/README.md) §1 も注意喚起済み。**要法務確認** | 公式の日本語比較値なし | Markdown 出力あり | CPU・軽量 | ◎ | — |
 
 ### 4-2. 単機能の堅実な選択肢（フォールバック）
 
@@ -74,7 +77,7 @@
 
 1. **公開評価は対象言語・文書種・版・指標が異なるため、順位を直接比較できません。** olmOCR-Bench は英語中心の OCR ベンチマークで、日本語変換の優劣を示しません。OmniDocBench v1.0（CVPR 2025）は 1,651 PDF ページ／10 文書種／5 レイアウト／5 言語で、28 種の block-level と 4 種の span-level 注釈を含みます。各値を統合した「中立的序列」は存在しないため、**本件の日本語コーパスで同一条件比較**します。
 2. **画像として埋め込まれた表の OCR は、どのエンジンでも依然として大きな課題**が残る、という点は各所で共通した見解です。
-3. **ライセンスが選定を強く縛ります。** コードとモデル重みでライセンスが異なる場合がある点に注意してください（Marker が典型）。MIT/Apache-2.0（Docling・MarkItDown・Unstructured OSS・Tika・olmOCR）が安全圏、AGPL デュアル（PyMuPDF4LLM）・独自条項（MinerU）・重みに制限（Marker）は**採用前に法務確認**が必要です。本レポートでは除外せず、条件を明記した上で候補に残しています。
+3. **ライセンスが選定を強く縛ります。** コードとモデル重みでライセンスが異なる場合がある点に注意してください（Marker が典型）。**本体コードについては** MIT/Apache-2.0（Docling・MarkItDown・Unstructured OSS・Tika・olmOCR）が安全圏ですが、**モデル重みは使用するモデルごとに元パッケージのライセンスを個別確認**してください。AGPL デュアル（PyMuPDF4LLM）・独自条項（MinerU）・重みに制限（Marker）は**採用前に法務確認**が必要です。本レポートでは除外せず、条件を明記した上で候補に残しています。
 
 ---
 
@@ -194,9 +197,11 @@ loader = DoclingLoader(file_path="whitepaper.pdf", export_type=ExportType.MARKDO
 ### OCR / スキャン資料への対応（LLM 利用の可否）
 
 - **Docling の「OCR エンジン」枠に LLM は指定できません。** OCR エンジン抽象が受けるのは Tesseract / EasyOCR / RapidOCR / OcrMac の古典 OCR のみです。
-- ただし**別系統の VLM パイプライン**で **OpenAI 互換エンドポイント**を指定できます。これは OCR レイヤの差し替えではなく、**パース全体を VLM に置き換える end-to-end 経路**です。現行の書き方は新ランタイム方式（`VlmConvertOptions.from_preset` ＋ `ApiVlmEngineOptions`）で、`ApiVlmOptions` は legacy 系です:
+- ただし**別系統の VLM パイプライン**で **OpenAI 互換エンドポイント**を指定できます。これは OCR レイヤの差し替えではなく、**パース全体を VLM に置き換える end-to-end 経路**です。現行の書き方は新ランタイム方式（`VlmConvertOptions.from_preset` ＋ `ApiVlmEngineOptions`）で、`ApiVlmOptions` は legacy 系です。以下は**概念例**であり、PoC で版固定して動作確認します（公式生成サンプルには旧引数名 `runtime_type` が残っている場合があります。固定版の API リファレンスと実動作で `engine_type` 等の引数名を確認してください）:
 
 ```python
+import os
+
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import VlmConvertOptions, VlmPipelineOptions
 from docling.datamodel.vlm_engine_options import ApiVlmEngineOptions, VlmEngineType
@@ -206,8 +211,12 @@ from docling.pipeline.vlm_pipeline import VlmPipeline
 vlm_options = VlmConvertOptions.from_preset(
     "granite_docling",
     engine_options=ApiVlmEngineOptions(
-        runtime_type=VlmEngineType.API,
+        engine_type=VlmEngineType.API,
         url="http://llm-001:8000/v1/chat/completions",  # self-hosted vLLM
+        headers={
+            # 本システムの vLLM は --api-key 運用のため認証ヘッダが必要
+            "Authorization": f"Bearer {os.environ['VLLM_API_KEY']}",
+        },
     ),
 )
 pipeline_options = VlmPipelineOptions(
@@ -224,7 +233,7 @@ converter = DocumentConverter(
 )
 ```
 
-- **本システムでは外部 API 送信を回避し、既に運用中の self-hosted vLLM の OpenAI 互換エンドポイントに向ける**ことで、オフラインを保ったまま VLM パースが可能です。ただし、**vLLM 側が VLM（画像入力対応モデル）を serve する構成、モデル互換性、認証ヘッダの扱いは別途検証**が必要です。ページ画像を 1 枚ずつ推論するため低速・高負荷であり、**通常は既定パイプライン、崩れる資料のみ VLM** という使い分けを推奨します。
+- **本システムでは外部 API 送信を回避し、既に運用中の self-hosted vLLM の OpenAI 互換エンドポイントに向ける**ことで、オフラインを保ったまま VLM パースが可能です。ただし、**vLLM 側が VLM（画像入力対応モデル）を実際に serve できる構成か、preset が指定するモデルと vLLM 側のモデル名が一致するか、認証ヘッダの扱い**は PoC 項目として検証が必要です。ページ画像を 1 枚ずつ推論するため低速・高負荷であり、**通常は既定パイプライン、崩れる資料のみ VLM** という使い分けを推奨します。
 
 ### リスク・留意点
 
@@ -234,7 +243,7 @@ converter = DocumentConverter(
 | オフライン運用 | 初回にモデル自動ダウンロード。NAT は取得時のみ開放 | 取得フェーズでモデルを**事前 prefetch** しキャッシュ固定。[事前準備](prerequisites.md) に手順追記 |
 | スループット | 単一ノード処理。数百ページで分単位 | `processed/` に永続化するバッチ前処理のため ingest 毎の再実行にならず許容。mtime スキップで再実行も安価 |
 | 抽出の当たり外れ | 資料により品質差 | 現行 PyPDFLoader 出力との**サンプル比較**を検収に組込み、崩れる資料のみ他ツール/VLM に切替える判断余地を残す |
-| 依存ピン | `~=` マイナー系互換の運用 | `docling~=<minor>` でピン。torch も CPU 版で明示ピン。API は版依存のため PoC で版固定して動作確認 |
+| 依存ピン | `~=` マイナー系互換の運用 | PoC で確認した具体版を **micro まで指定**してピンする（例 `docling~=2.115.0`。`~=2.115` は 2.x 全体を許容するため使用しない）。torch も CPU 版で明示ピン。API は版依存のため PoC で版固定して動作確認 |
 | 案1b | Open WebUI は `ingest.py`/`documents/` を持たない | 生成した Markdown を UI/API 経由でアップロードする運用として明記 |
 | 表記正規化 | NFKC/neologdn は分割前に一度だけ（[構成要素解説](../06-tuning/README.md) §2） | Docling 出力直後（前処理段）で正規化する位置づけとする |
 
@@ -257,34 +266,46 @@ converter = DocumentConverter(
 
 ## 9. 検証方法（採用可否の判断根拠）
 
-### 9-1. 評価資料の事前固定
+> PoC 実施に必要な一時的な変換スクリプト・評価ハーネス・依存 lock・モデル prefetch は PoC 期間中に隔離 venv 上で作成する（本番統合とは区別。冒頭注記参照）。合格条件・閾値・評価手順書は **PoC 開始前に確定**し、評価後に変更しない。
 
-日本語デジタル PDF・スキャン PDF・縦書き・2段組・複雑表を**各 10 ページ以上**、白書/IPA コーパスから事前に選定して固定する（恣意的な事後選定を避ける）。HTML・PPTX のサンプルも同時に固定する。
+### 9-1. 評価資料と正解データの事前固定
+
+- 日本語デジタル PDF・スキャン PDF・縦書き・2段組・複雑表を**各 10 ページ以上**、白書/IPA コーパスから事前に選定して固定する（恣意的な事後選定を避ける）。
+- 選定した評価ページについて、**正解データを事前に人手注釈**する: 文字転記、読み順付き block ID、見出し level、表の正規化 HTML、`page_no`/bbox。
+- 表の指標は **TEDS（文字内容込み）と TEDS-Struct（構造のみ）のどちらを用いるかを事前に固定**し、Markdown → HTML 変換規則、結合セル・空セルの扱いを評価手順書に定義する（TEDS は HTML ツリー比較の指標であり、Markdown 出力をそのまま投入できない）。
 
 ### 9-2. 測定指標
 
-| 対象 | 指標 |
-|---|---|
-| 文字抽出 | CER、欠落率、重複率 |
-| 読み順 | block pair accuracy |
-| 表 | TEDS または cell-level precision/recall |
-| 見出し | level 付き precision/recall |
-| 出典 | `page_no` 正解率 100%、bbox IoU（閾値を事前設定） |
-| RAG | Evidence Recall、MRR、nDCG（質問単位 bootstrap 信頼区間つき） |
-| 性能 | pages/s、最大 RSS、成果物サイズ、コンテナイメージ増分 |
+| 対象 | 指標 | 前提 |
+|---|---|---|
+| 文字抽出 | CER、欠落率、重複率 | 正解転記との比較 |
+| 読み順 | block pair accuracy | 読み順付き block 注釈が必要 |
+| 表 | TEDS または TEDS-Struct（§9-1 で固定） | 正解 HTML・変換規則の事前定義が必要 |
+| 見出し | level 付き precision/recall | 見出し注釈が必要 |
+| 出典 | `page_no` 正解率、bbox IoU（閾値を事前設定） | **構造出力を持つ候補（案B 系）のみ**。合否は機能検証として別判定 |
+| RAG | Evidence Recall@4、MRR、nDCG | **本番ゴールデンデータ**（下記）で paired 比較 |
+| 性能 | pages/s、最大 RSS、成果物サイズ、コンテナイメージ増分 | 同一 CPU・同一資料・同一 OCR 条件 |
+
+**RAG 評価のデータ:** `05-evaluation` のサンプルゴールデンデータ（10 件）は**動作確認にのみ用いる**。統計的比較には**本番ゴールデンデータを別途作成**し、固定した同一質問集合で Evidence Recall@4 を paired 比較する。必要標本数・信頼区間の水準は、ベースライン分布と検出したい最小差に基づき PoC 開始前に確定する。
 
 ### 9-3. 比較系列
 
 - **ベースライン: 現行 `PyPDFLoader` の出力を保存して比較**する（`pdftotext` は Poppler 系の**別**ベースラインとして分離。現行システムの代用にしない）
 - Docling（既定パイプライン。`do_ocr=True`/`do_ocr=False` の両系列）
 - 軽量比較対象: MarkItDown ／ 高機能比較対象: MinerU（ライセンス確認後）
-- チャンキング: pypdf ベースライン・案A・案B の3系列で Hit Rate / MRR 等を比較
+- チャンキング: pypdf ベースライン・案A・案B の3系列で比較
 
-### 9-4. 合格条件（例。PoC 開始前に確定する）
+### 9-4. 合格条件（枠組み。閾値は PoC 開始前に確定する）
 
-- 現行 pypdf 比で主要構造指標（CER・表・読み順）を悪化させないこと
-- Evidence Recall を 5 ポイント以上改善すること
-- 評価資料内で重大欠落（節単位の本文欠落）0 件
+指標は**必須条件**と**参考条件**に分け、指標ごとに絶対閾値またはベースライン差の**非劣性マージン**を事前設定する。複数指標が相反した場合の判定規則（必須条件の全充足を優先）も事前に定める。
+
+- **必須条件（例）:**
+  - 評価資料内で重大欠落（節単位の本文欠落）0 件
+  - CER が現行 pypdf 比で非劣性（マージンは事前設定）
+  - 本番ゴールデンデータの Evidence Recall@4 が有意に改善（最小検出差は標本設計とともに事前確定。「+5 ポイント」は目安であり、標本数が不足する場合は目標値を再設計する）
+- **参考条件（例）:**
+  - TEDS / 読み順 / 見出し指標の改善（**表構造を出力できる候補間のみ**比較。PyPDFLoader は表構造・bbox を出力しないため同一指標での全系列比較はできない）
+  - bbox IoU は案B の機能検証として合否を別判定
 
 ### 9-5. その他の検証
 
@@ -292,6 +313,16 @@ converter = DocumentConverter(
 2. **オフライン再現:** モデル prefetch 済みキャッシュで NAT 閉塞状態でも前処理が完走することを確認（トークナイザの `local_files_only=True` 動作を含む）。
 3. **案B の成立性:** lock 後のイメージ差分・最大 RSS・SBOM/CVE・オフライン起動試験。DoclingDocument schema の版互換も確認。
 4. **ライセンス確認:** MinerU（追加条項）・Marker（モデル重みの Rail-M、README の GPL 表記との不整合）は採用前に法務確認し、結果を本レポートに追記。
+5. **VLM 経路（該当時）:** vLLM 側の VLM serve 構成・preset モデル名との一致・認証ヘッダを検証（§7）。
+
+### 9-6. HTML / PPTX の成立確認（定量評価の対象外）
+
+HTML / PPTX は**形式対応の成立確認に限定**する。各形式のサンプルを事前固定し、以下を確認する（合否は目視チェックリストで記録）:
+
+- **PPTX:** スライド順の保持、スピーカーノートの扱い、表、図中テキストの扱い
+- **HTML:** 本文抽出（ナビゲーション・フッタの除外）、表、見出し階層の保持
+
+定量的な構造指標・合格条件を HTML/PPTX に拡張するかは、実コーパスに両形式が入った時点で再判断する。
 
 ---
 
