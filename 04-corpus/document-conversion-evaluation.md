@@ -8,6 +8,7 @@
 > - 2026-07-24 初版
 > - 2026-07-24 一次レビュー指摘を反映（Docling 現行 API への修正、OCR 既定値の訂正、無出典数値の削除、比較の対称化、測定可能な受け入れ基準の明文化）
 > - 2026-07-24 再レビュー指摘を反映（VLM API の引数名修正、認証ヘッダの追記、比較表の無出典評判の除去、正解注釈・非劣性マージン・形式別スコープの明確化、PoC 実装と本番統合の区別）
+> - 2026-07-24 三巡目レビュー指摘を反映（VLM 例に vLLM 向け `params`・served model 名の一致を追記、OCR エンジン列挙の更新、既定レイアウトモデル名の訂正）。判定: 条件付き承認 → 条件解消済み
 
 ## 1. 背景と目的
 
@@ -58,7 +59,7 @@
 
 | ツール | 入力形式（本件3形式） | ライセンス（コード / モデル重み） | 日本語・縦書き | 表・読み順 | CPU/GPU | オフライン適性 | 補助情報（普及度） |
 |---|---|---|---|---|---|---|---|
-| **Docling** (IBM) | PDF/HTML/PPTX ○（＋DOCX/XLSX 等） | コード: MIT / **モデル重みは使用するモデルごとに元パッケージのライセンスを個別確認** | 公式の日本語比較値なし。§9 で実測 | DocLayNet＋TableFormer で明示的に推定（機構として持つ。品質は §9 で実測） | CPU 可・GPU で高速化 | ◎ ローカル実行・モデル事前取得可 | 約 63.7k star。LangChain/LlamaIndex/Haystack 統合 |
+| **Docling** (IBM) | PDF/HTML/PPTX ○（＋DOCX/XLSX 等） | コード: MIT / **モデル重みは使用するモデルごとに元パッケージのライセンスを個別確認** | 公式の日本語比較値なし。§9 で実測 | 既定の Heron レイアウトモデル＋TableFormer でレイアウト・表構造を明示的に推定（使用モデルと revision は PoC で固定。品質は §9 で実測） | CPU 可・GPU で高速化 | ◎ ローカル実行・モデル事前取得可 | 約 63.7k star。LangChain/LlamaIndex/Haystack 統合 |
 | **MarkItDown** (Microsoft) | PDF/HTML/PPTX ○（＋音声/EPUB/メール等） | MIT | 公式の日本語比較値なし。§9 で実測 | レイアウト・表構造の推定機構なし（公式比較値なし。§9 で実測） | CPU のみで可（GPU 不要） | ◎ 軽量 | 約 168.6k star、依存公開リポジトリ約 3,079 件（GitHub 概算） |
 | **Unstructured** | PDF/HTML/PPTX ○（30+ 形式） | OSS ライブラリ: Apache-2.0（別に商用 API/プラットフォームの提供あり） | 公式の日本語比較値なし。§9 で実測 | 公式比較値なし。§9 で実測 | CPU 可 | ○（依存パッケージが多い） | RAG 界隈で定番 |
 | **Apache Tika** | PDF/HTML/PPTX ○（1000+ 形式） | Apache-2.0 | 公式の日本語比較値なし | **構造化 Markdown を出さない**（プレーンテキスト＋メタデータ） | CPU・軽量 | ◎（Java 必要） | Java 圏のデファクト。長期実績 |
@@ -196,7 +197,7 @@ loader = DoclingLoader(file_path="whitepaper.pdf", export_type=ExportType.MARKDO
 
 ### OCR / スキャン資料への対応（LLM 利用の可否）
 
-- **Docling の「OCR エンジン」枠に LLM は指定できません。** OCR エンジン抽象が受けるのは Tesseract / EasyOCR / RapidOCR / OcrMac の古典 OCR のみです。
+- **Docling の「OCR エンジン」枠に LLM は指定できません。** OCR 枠には Tesseract、EasyOCR、RapidOCR、OcrMac、SuryaOCR 等の OCR 実装を指定します。利用可能な実装は固定する Docling 版で再確認してください。
 - ただし**別系統の VLM パイプライン**で **OpenAI 互換エンドポイント**を指定できます。これは OCR レイヤの差し替えではなく、**パース全体を VLM に置き換える end-to-end 経路**です。現行の書き方は新ランタイム方式（`VlmConvertOptions.from_preset` ＋ `ApiVlmEngineOptions`）で、`ApiVlmOptions` は legacy 系です。以下は**概念例**であり、PoC で版固定して動作確認します（公式生成サンプルには旧引数名 `runtime_type` が残っている場合があります。固定版の API リファレンスと実動作で `engine_type` 等の引数名を確認してください）:
 
 ```python
@@ -216,6 +217,13 @@ vlm_options = VlmConvertOptions.from_preset(
         headers={
             # 本システムの vLLM は --api-key 運用のため認証ヘッダが必要
             "Authorization": f"Bearer {os.environ['VLLM_API_KEY']}",
+        },
+        params={
+            # vLLM 側の served model 名（--served-model-name）と一致させる
+            "model": "ibm-granite/granite-docling-258M",
+            "temperature": 0.0,
+            "max_tokens": 8192,
+            "skip_special_tokens": False,  # DocTags 出力に必要
         },
     ),
 )
