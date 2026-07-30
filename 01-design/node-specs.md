@@ -2,30 +2,33 @@
 
 本設計は特定クラウドのマネージドサービスを使わない構成のため、EC2 は「素の Ubuntu VM」として利用します(オンプレミスに置き換える場合も本書の CPU/RAM/GPU 要件がそのまま基準になります)。
 
-> **ノード名の対応に注意**: 本リポジトリでは一貫して **Node A = GPU ノード(vLLM、VRAM 40GB+、NVIDIA Container Toolkit 必要)/ Node B = アプリ+データノード(GPU 不要)** と定義しています。GPU 要件・GPU AMI が付くのは **Node A** 側です。
+> **ノード名の対応に注意**: 本リポジトリでは一貫して **Node A / Node A-2 / Node A-3 = GPU ノード(vLLM、NVIDIA Container Toolkit 必要)/ Node B = アプリ+データノード(GPU 不要)** と定義しています。GPU 要件・GPU AMI が付くのは **Node A 系 3 ノード**です。
 
 ## サマリ
 
 | ノード | 役割 | Instance Type(推奨) | AMI |
 |---|---|---|---|
-| **Node A** | vLLM(推論専用) | **g6e.2xlarge**(最小: g6e.xlarge) | Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04) |
+| **Node A** | vLLM / GPTQ 4bit・最大 32k(推論専用) | **g6e.2xlarge**(最小: g6e.xlarge) | Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04) |
+| **Node A-2** | vLLM / GPTQ 8bit・最大 16k(推論専用) | **g6e.2xlarge**(最小: g6e.xlarge) | 同上 |
+| **Node A-3** | vLLM / 16bit 非量子化・最大 32k(推論専用) | **p5.4xlarge**(単一 H100 80GB。代替案は §1.3) | 同上 |
 | **Node B** | WebUI / RAG API / ベクトル DB / TEI | 案毎に下表(例: 案2 は m7i.xlarge〜) | Ubuntu Server 24.04 LTS(Canonical 公式) |
 | **性能測定ノード** | Locust による負荷生成 | **t3.medium** | Ubuntu Server 24.04 LTS(Canonical 公式) |
 
 ---
 
-## 1. Node A(GPU ノード)の選定
+## 1. Node A 系(GPU ノード)の選定
 
 ### 1.1 要求スペック(確定要件)
 
-利用する vLLM の要件として以下が確定しています。
+利用する vLLM と LLM の要件として以下が確定しています。「量子化」は Qdrant のベクトル量子化ではなく、LLM の**重み量子化(GPTQ)**を指します。
 
-| 項目 | 要件 |
-|---|---|
-| GPU 世代 | **Ampere 世代以降**(Compute Capability 8.0 以上。A100 / A10 / L4 / L40S / H100 等が該当) |
-| VRAM | **40GB 以上** |
-| CUDA | **12.8 対応**(NVIDIA Driver は 570 系以降) |
-| 必須ソフトウェア | **NVIDIA Driver** / **NVIDIA Container Toolkit**(Docker 方式で vLLM を動かすため) |
+| ノード | GPU 世代 | VRAM | 最大シーケンス長 | LLM の重み形式 | vLLM 起動パラメータ |
+|---|---|---:|---:|---|---|
+| **Node A(既存)** | Ampere 世代以降 | **40GB 以上** | **32k** | **GPTQ 4bit** | `--max-model-len 32768 --gpu-memory-utilization 0.90` |
+| **Node A-2(新規)** | Ampere 世代以降 | **40GB 以上** | **16k** | **GPTQ 8bit** | `--max-model-len 16384 --gpu-memory-utilization 0.90` |
+| **Node A-3(新規)** | Ampere 世代以降 | **80GB 以上** | **32k** | **16bit(非量子化)** | `--max-model-len 32768 --gpu-memory-utilization 0.90`。2×L40S 案のみ `--tensor-parallel-size 2` |
+
+全ノード共通で CUDA **12.8 対応**(NVIDIA Driver は 570 系以降)、**NVIDIA Driver**、**NVIDIA Container Toolkit**が必要です。
 
 - ソフトウェア要件は後述の Deep Learning Base OSS Nvidia Driver GPU AMI で充足できる(§1.4)。導入済みドライバが CUDA 12.8 に対応しているかは、AMI のリリースノートと起動後の `nvidia-smi`(右上の CUDA Version 表示が 12.8 以上)で確認する
 - venv + systemd 方式([02-provisioning/node-a/vllm.service](../02-provisioning/node-a/vllm.service))を採る場合、NVIDIA Container Toolkit は不要(Driver のみ必須)
@@ -34,24 +37,28 @@
 
 GPU インスタンスの選定は、次の順で絞り込みます。
 
-1. **GPU 世代と VRAM が決定打**(vCPU/RAM は二の次)。Ampere 以降かつ VRAM 40GB 以上を**単一 GPU** で満たせるファミリーを選ぶ。複数 GPU の合算でも `--tensor-parallel-size` で動くが、通信オーバーヘッドと運用の複雑さが増すため、載るなら 1 枚に載せるのが基本
-2. **ホスト RAM はモデルサイズ以上**を確保する(モデルロード時に読み込むため。VRAM 40GB を使い切るモデルならホスト RAM 64GB が安全)
+1. **GPU 世代と VRAM が決定打**(vCPU/RAM は二の次)。必要 VRAM を**単一 GPU**で満たすのが原則。例外として Node A-3 は、単一 80GB GPU の調達性・コストと比較したうえで 2×L40S(合計 96GB、`--tensor-parallel-size 2`)を許容する
+2. **ホスト RAM はモデルファイルのサイズ以上**を確保する。Node A / A-2 は 64GB を推奨し、16bit モデルを読む Node A-3 はロード時の一時領域も含めて特に余裕を持たせる
 3. vCPU はトークナイズ・前処理程度なので 4〜8 で足りる
 4. 推論はネットワーク負荷が小さいので帯域は既定で十分
 
 ### 1.3 候補の比較(2026-07 時点)
 
-| Instance Type | GPU(世代) | VRAM | vCPU / RAM | 判定 |
-|---|---|---|---|---|
-| **g6e.xlarge** | L40S ×1(Ada Lovelace = Ampere より後) | **48GB** | 4 / 32GB | ○ 最小構成(コスト優先) |
-| **g6e.2xlarge** | L40S ×1(同上) | **48GB** | 8 / 64GB | **◎ 推奨**(ホスト RAM に余裕) |
-| g5.xlarge | A10G ×1(Ampere) | 24GB | - | × 世代は満たすが VRAM 不足 |
-| g6.xlarge | L4 ×1(Ada Lovelace) | 24GB | - | × VRAM 不足 |
-| g6e.12xlarge | L40S ×4 | 192GB | 48 / 384GB | △ 70B 級 bf16 等、1 枚に載らない場合のみ(`--tensor-parallel-size 4`) |
-| p4d / p5 系 | A100(Ampere)/ H100(Hopper)×8 | 320GB〜 | - | × 要件は満たすが 8 GPU 固定で本用途にはオーバースペック |
+| 対象ノード | Instance Type | GPU(世代) | 搭載 VRAM | vCPU / RAM | 判定・使用方法 |
+|---|---|---|---:|---|---|
+| A / A-2 | **g6e.xlarge** | L40S ×1(Ada Lovelace) | **48GB** | 4 / 32GB | ○ 最小構成(コスト優先) |
+| A / A-2 | **g6e.2xlarge** | L40S ×1(同上) | **48GB** | 8 / 64GB | **◎ 推奨**(ホスト RAM に余裕) |
+| A / A-2 | g5.xlarge | A10G ×1(Ampere) | 24GB | - | × VRAM 不足 |
+| A / A-2 | g6.xlarge | L4 ×1(Ada Lovelace) | 24GB | - | × VRAM 不足 |
+| A-3 | **p5.4xlarge** | H100 ×1(Hopper) | **80GB** | 16 / 256GB | **◎ 単一 GPU 推奨案**。現行原則どおり TP=1 |
+| A-3 | p4de.24xlarge | A100 80GB ×8(Ampere) | 640GB | 96 / 1,152GB | × 単一 GPU だけで要件を満たすが、8 GPU 固定の課金で本用途には大幅なオーバースペック |
+| A-3 | p5.48xlarge | H100 80GB ×8(Hopper) | 640GB | 192 / 2,048GB | × 単一 GPU だけで要件を満たすが、8 GPU 固定の課金で本用途には大幅なオーバースペック |
+| A-3 | **g6e.12xlarge** | L40S ×4(Ada Lovelace) | 192GB | 48 / 384GB | ○ **2 GPU(96GB)のみ使用、TP=2**。残る 2 GPU 分もインスタンス料金に含まれる |
 
 - **g6e ファミリー(NVIDIA L40S 48GB/GPU、Ada Lovelace 世代)が「Ampere 以降 + 単一 GPU で 40GB+」を満たす最も経済的な選択肢**です。L40S は CUDA 12.8 対応です。同じ 1 GPU なら xlarge / 2xlarge / 4xlarge の VRAM は同じ 48GB で、差は vCPU / ホスト RAM のみ
 - g6e.xlarge(ホスト RAM 32GB)は、VRAM 40GB を使い切るサイズのモデルをロードする際にホスト RAM が窮屈になり得るため、**g6e.2xlarge を推奨**とします。まず xlarge で始めて、ロード時のメモリ不足やスワップが出たら 2xlarge に上げる進め方でも問題ありません
+- Node A-3 は **p5.4xlarge の単一 H100 80GB**が GPU 数と料金の対応が最も素直です。p4de.24xlarge / p5.48xlarge は 8 GPU 全体への課金となります。g6e.12xlarge は 4×L40S 搭載ですが本要件では 2 GPU だけを TP=2 で使うため、GPU 間通信のオーバーヘッドに加え、未使用 2 GPU 分のコストも負担します
+- p5.4xlarge は比較的新しいサイズのため、**東京リージョンでの提供有無と単価を確定時に EC2 料金表で必ず確認**します
 - 月額の試算は §6 を参照。料金は変動するため、確定時に [EC2 オンデマンド料金表](https://aws.amazon.com/ec2/pricing/on-demand/) で対象リージョンの単価を確認してください。検証フェーズは停止(EBS のみ課金)をこまめに行うとコストを抑えられます
 
 ### 1.4 AMI
@@ -94,7 +101,9 @@ Locust の負荷生成専用ノードには **t3.medium(2vCPU/4GB)** を採用�
 
 | ノード | 推奨 | サイジングの考え方 |
 |---|---|---|
-| Node A | **gp3 200GB〜** | モデル本体(HF 形式)+ HF キャッシュで実質モデルサイズの 2〜3 倍。40GB 級 VRAM を使うモデルなら 200GB が安全圏 |
+| Node A | **gp3 200GB〜** | GPTQ 4bit モデル本体 + HF キャッシュ。実ファイルサイズの 2〜3 倍を確保 |
+| Node A-2 | **gp3 200GB〜** | GPTQ 8bit モデル本体 + HF キャッシュ。実ファイルサイズの 2〜3 倍を確保し、不足時は拡張 |
+| Node A-3 | **gp3 300GB〜** | 16bit モデルは GPTQ 版より大きい。モデル取得後の実ファイルサイズを確認し、その 2〜3 倍へ再計算(大規模モデルは 300GB を超えて拡張) |
 | Node B | **gp3 100GB〜**(案3 は 200GB〜) | TEI のモデルキャッシュ(数 GB)+ ベクトル/全文インデックス + 投入文書。案3 は OpenSearch のインデックスが支配的で、コーパス増に応じて拡張 |
 | 性能測定ノード | **gp3 30GB** | Ubuntu、Python 仮想環境、Locust、CSV 測定結果を収容 |
 
@@ -102,17 +111,17 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 
 ## 5. ネットワーク / セキュリティグループ
 
-- Node A、Node B、性能測定ノードは**同一 VPC・同一 AZ**に配置する(ノード間はプライベート IP で通信。AZ を跨ぐとレイテンシと転送費用が発生)
-- 手順書の ufw の役割は **セキュリティグループ(SG)** で代替する:
-- 3 ノード役割には同じ SG を付与し、**同一 SG 内の通信を相互許可する自己参照ルール**を設定するため、perf-001 から Node B の 443/tcp へ到達できる
+- Node A / A-2 / A-3、Node B、性能測定ノードは**同一 VPC・同一 AZ**に配置する(ノード間はプライベート IP で通信。AZ を跨ぐとレイテンシと転送費用が発生)
+- 手順書の ufw の役割は **セキュリティグループ(SG)** で代替する
+- 全ノード役割には同じ SG を付与し、**同一 SG 内の通信を相互許可する自己参照ルール**を設定する。これにより Node B から全 GPU ノードの 8080/tcp、perf-001 から Node B の 443/tcp へ到達できる
 
 | ルール | 送信元 | 宛先 | ポート |
 |---|---|---|---|
-| vLLM API | Node B の SG | Node A | 8080/tcp |
+| vLLM API | 同一 SG(Node B 等) | Node A / A-2 / A-3 | 8080/tcp |
 | WebUI(案1/案1b/案2/案3) | 利用者ネットワーク(社内 CIDR 等) | Node B | 8000(案1) / 80・443(案1b/案2/案3) |
 | SSH 管理 | 管理端末の CIDR(または SSM Session Manager を使い閉じる) | 両ノード | 22/tcp |
 
-- vLLM の `--api-key` は SG があっても設定する(多層防御。[02-provisioning/node-a/.env.example](../02-provisioning/node-a/.env.example) の `VLLM_API_KEY`)
+- vLLM の `--api-key` は全 GPU ノードで必須とする(単一 SG の自己参照ルールに対する多層防御)。各ノードの `.env.example` の `VLLM_API_KEY` を必ず変更する
 - Node B の docker-compose がデバッグ用に開けるポート(6333/8081/8082/9200 等)は `127.0.0.1` バインド済みのため、SG 側の許可は不要
 
 ## 6. 料金目安(月額)
@@ -122,7 +131,11 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 | Instance Type | 想定用途 | 単価(USD/h) | 常時稼働 730h(円/月) | 日中帯のみ 160h(円/月) |
 |---|---|---:|---:|---:|
 | **g6e.xlarge** | Node A(最小) | 2.699 | 約 315,200 | 約 69,100 |
-| **g6e.2xlarge** | Node A(推奨) | 3.252 | 約 379,800 | 約 83,200 |
+| **g6e.2xlarge** | Node A(推奨) | 3.252 | 約 379,800 | 約 83,300 |
+| **p5.4xlarge** | Node A-3(単一 GPU 推奨) | 8.600 | 約 1,004,500 | 約 220,200 |
+| g6e.12xlarge | Node A-3(TP=2、4 GPU 分課金) | 15.217 | 約 1,777,300 | 約 389,600 |
+| p4de.24xlarge | Node A-3(8 GPU 固定、比較用) | 37.6223 | 約 4,394,300 | 約 963,100 |
+| p5.48xlarge | Node A-3(8 GPU 固定、比較用) | 68.800 | 約 8,035,800 | 約 1,761,300 |
 | t3.medium | 性能測定ノード | 0.0544 | 約 6,400 | 約 1,400 |
 | t3.large | Node B 案1/案1b(最小) | 0.1088 | 約 12,700 | 約 2,800 |
 | m7i.xlarge | Node B 案1/案1b 推奨 / 案2 最小 | 0.2604 | 約 30,400 | 約 6,700 |
@@ -130,13 +143,13 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 | r7i.xlarge | Node B 案3(最小) | 0.3192 | 約 37,300 | 約 8,200 |
 | r7i.2xlarge | Node B 案3(推奨) | 0.6384 | 約 74,600 | 約 16,300 |
 
-**構成例(Node A + Node B の合算)**
+**構成例(GPU 3 ノード + Node B の合算)**
 
 | 構成 | 常時稼働(円/月) | 日中帯のみ(円/月) |
 |---|---:|---:|
-| 検証最小(g6e.xlarge + t3.large) | 約 327,900 | 約 71,900 |
-| 案2 常用(g6e.2xlarge + m7i.2xlarge) | 約 440,600 | 約 96,500 |
-| 案3 常用(g6e.2xlarge + r7i.2xlarge) | 約 454,400 | 約 99,500 |
+| 検証最小(A/A-2=g6e.xlarge、A-3=p5.4xlarge、B=t3.large) | 約 1,647,600 | 約 361,200 |
+| 案2 常用(A/A-2=g6e.2xlarge、A-3=p5.4xlarge、B=m7i.2xlarge) | 約 1,825,000 | 約 400,100 |
+| 案3常用・A-3をTP=2(A/A-2=g6e.2xlarge、A-3=g6e.12xlarge、B=r7i.2xlarge) | 約 2,611,500 | 約 572,500 |
 
 **非インスタンス系サービスの月額(EC2 インスタンス費以外)**
 
@@ -149,13 +162,13 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 | NAT Gateway(一時) | 稼働時間 + 処理データ量 | 約 10 円/h + 約 10 円/GB(定常運用では削除) |
 | Elastic IP(NAT 用・一時) | 割当中のみ | 約 0.8 円/h(NAT 稼働中のみ) |
 
-- **EBS が唯一の常時課金項目**(インスタンスを停止しても消えない)。推奨構成の EBS 合算: 案1/案1b/案2 = Node A 200GB + Node B 100GB ≒ **約 4,600 円/月**、案3 = 200GB + 200GB ≒ **約 6,200 円/月**。
+- **EBS が唯一の常時課金項目**(インスタンスを停止しても消えない)。GPU 3 ノードの最小推奨容量は 200GB + 200GB + 300GB。Node B を含む合算は案1/案1b/案2で 800GB ≒ **約 12,300 円/月**、案3で 900GB ≒ **約 13,800 円/月**。
 - **NAT Gateway + EIP は一時利用**。例: セットアップ 1 回(約 10h 稼働・モデル/イメージ 100GB ダウンロード)≒ **約 1,100 円/回**。使い終えたら削除して停止する([aws-provisioning.md](../02-provisioning/aws-provisioning.md) §2.2)。
 - VPC・IGW・EICE 等は無料。データ転送(外向き egress)は別途だが、定常運用は閉域(IGW/NAT なし)のため EC2 起点の egress はほぼ発生しない。
 
 **留意点**
 
-- コストの支配項は **Node A(GPU)で、全体の 8〜9 割**を占める。日中帯のみの停止運用(EC2 は停止中 EBS 課金のみ)にするだけで GPU 費用は約 1/4.6 になるため、検証フェーズは**夜間・休日停止の運用を強く推奨**(cron / EventBridge スケジューラ等で自動化)
+- コストの支配項は **Node A / A-2 / A-3 の GPU 3 ノード**です。案2常用例では GPU 費用が常時約 176.4 万円/月から日中帯約 38.7 万円/月へ約 137.7 万円下がります。730h と 160h の比率どおり約 78%削減できるため、全 GPU ノードに毎日 18:00 の自動停止を適用し、夜間・休日は停止します
 - 上記の Instance Type 表は EC2 インスタンス費のみ。EBS・NAT・その他サービスは前掲「非インスタンス系サービスの月額」を参照
 - 常時稼働が確定したら、1 年リザーブドインスタンス / Savings Plans で GPU は 3〜4 割安くなる(例: g6e.xlarge の 1 年 RI は約 1.70 USD/h)
 - 単価・為替は変動するため、稟議・予算化の際は [AWS 料金計算ツール](https://calculator.aws/) で最新値を再計算すること

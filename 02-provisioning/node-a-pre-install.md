@@ -2,11 +2,12 @@
 
 ## 0. 位置づけ
 
-本書は **Node A(vLLM 推論専用の GPU ノード)単体**を構築・動作確認する手順です。4 ノード一式をまとめて構築する場合は [aws-provisioning.md](aws-provisioning.md)(IaC 的な Bash/CLI 手順)を使ってください。本書はその Node A 部分だけを取り出し、単体構築・単体動作確認をしたい場合の手順です。
+本書は **Node A / Node A-2 / Node A-3(vLLM 推論専用の GPU ノード)**を構築・動作確認する共通手順です。システム一式をまとめて構築する場合は [aws-provisioning.md](aws-provisioning.md)(IaC 的な Bash/CLI 手順)を使ってください。本書は GPU ノード部分だけを取り出し、単体構築・単体動作確認をしたい場合の手順です。
 
 - スペックの根拠: [node-specs.md](../01-design/node-specs.md) §1
 - ネットワーク設計(プライベートサブネット・EICE 接続): [aws-provisioning.md](aws-provisioning.md) 方針・設計 / §1.1・§1.2・§1.4
-- vLLM のサービス化(compose・.env): [02-provisioning/node-a/](node-a/)
+- vLLM のサービス化(共通 compose・service): [02-provisioning/node-a/](node-a/)
+- ノード別設定: [Node A-2](node-a-2/) / [Node A-3](node-a-3/)
 
 ## 1. システム要件
 
@@ -15,19 +16,20 @@ vLLM の確定要件([node-specs.md](../01-design/node-specs.md) §1.1 と同一
 - CPU: x64
 - GPU: NVIDIA **Ampere 世代以降**
 - CUDA **12.8 対応**
-- VRAM **40GB 以上**
+- VRAM: Node A / A-2 は **40GB 以上**、Node A-3 は **80GB 以上**
 - 必須ソフトウェア: NVIDIA Driver / NVIDIA Container Toolkit(Docker で vLLM を動かすため)
 - インターネット接続(セットアップ時のみ。イメージ・モデル取得用)
 
 ## 2. 推奨インスタンス
 
-| 項目 | 内容 |
-|---|---|
-| EC2 インスタンス | **g6e.2xlarge**(最小: g6e.xlarge) |
-| GPU | NVIDIA L40S |
-| GPU メモリ | 48GB |
-| vCPU / メモリ | 8 / 64GB(最小: 4 / 32GB) |
-| OS / AMI | **Ubuntu 24.04**・Deep Learning Base OSS Nvidia Driver GPU AMI |
+| ノード | モデル / 最大シーケンス長 | EC2 インスタンス | GPU / VRAM | ホスト RAM | EBS |
+|---|---|---|---|---:|---:|
+| Node A | GPTQ 4bit / 32k | **g6e.2xlarge**(最小: g6e.xlarge) | L40S ×1 / 48GB | 64GB(最小 32GB) | gp3 200GB〜 |
+| Node A-2 | GPTQ 8bit / 16k | **g6e.2xlarge**(最小: g6e.xlarge) | L40S ×1 / 48GB | 64GB(最小 32GB) | gp3 200GB〜 |
+| Node A-3 | 16bit 非量子化 / 32k | **p5.4xlarge** | H100 ×1 / 80GB | 256GB | gp3 300GB〜 |
+| Node A-3(代替) | 同上 | g6e.12xlarge | L40S ×4 / 192GB(2 GPU・96GB を使用) | 384GB | gp3 300GB〜 |
+
+Node A-3 の p4de / p5 系と 2×L40S 案の比較、EBS の再計算方法は [node-specs.md §1.3・§4](../01-design/node-specs.md)を正とします。全ノードの OS / AMI は **Ubuntu 24.04**・Deep Learning Base OSS Nvidia Driver GPU AMI です。
 
 > 24.04 を採用する理由: 利用する vLLM の Docker イメージ(`vllm/vllm-openai`)が Ubuntu 24.04 ベースであり、ホスト OS を合わせておくとカーネル/ドライバの組み合わせ検証が揃うため。DLAMI は NVIDIA Driver・Docker・NVIDIA Container Toolkit が導入済みで、[node-specs.md §1.4](../01-design/node-specs.md) の判断根拠どおり個別インストールが不要。
 
@@ -43,6 +45,8 @@ vLLM の確定要件([node-specs.md](../01-design/node-specs.md) §1.1 と同一
 | ネットワーク | 既存の VPC・プライベートサブネット(新規に一式作る場合は [aws-provisioning.md](aws-provisioning.md) §1.1 を先に実行) |
 | パブリック IP | **無効**(割り当てない) |
 | Security Group | 内部通信は同一 SG 内許可、22 番は EICE の SG からのみ許可(外部 SSH は開けない。§1.2 参照) |
+
+上表は Node A / A-2 の値です。Node A-3 は §2 のとおり gp3 300GB 以上から開始し、16bit モデルの実ファイルサイズの 2〜3 倍へ再計算します。
 
 ### 3.2 起動(CLI)
 
@@ -106,6 +110,14 @@ nvidia-ctk --version
 |   0  NVIDIA L40S             On |    0MiB / 49140MiB                       |
 +-----------------------------------------------------------------------------+
 ```
+
+ノード別に期待する GPU メモリは次のとおりです。`nvidia-smi` の表示単位・予約領域により、カタログ値と表示値には差があります。
+
+| ノード / 案 | 期待する GPU 数 | カタログ VRAM | `nvidia-smi` の目安 |
+|---|---:|---:|---|
+| Node A / A-2(L40S) | 1 | 48GB | 約 45,000MiB 以上 |
+| Node A-3(H100 / A100 80GB) | 1(8 GPU 固定インスタンスでは搭載数 8) | 80GB/GPU | 約 80,000MiB 以上/GPU |
+| Node A-3(2×L40S) | 搭載 4、vLLM 使用 2 | 48GB/GPU | 約 45,000MiB 以上/GPU |
 
 GPU を使った Docker コンテナの動作確認:
 
@@ -178,9 +190,18 @@ sudo systemctl restart docker
 
 導入後は §4 の GPU コンテナ動作確認で仕上げる。
 
-## 6. vLLM の起動(02-provisioning/node-a/ を使用)
+## 6. vLLM の起動(共通ファイルとノード別 .env を使用)
 
-独自の compose を組む必要はなく、リポジトリ同梱の [02-provisioning/node-a/docker-compose.yml](node-a/docker-compose.yml) をそのまま使う(vLLM 自体に同梱の OpenAI 互換サーバ `vllm serve` を Docker 公式イメージ `vllm/vllm-openai` 経由で起動する構成。自前の API ラッパーは不要)。
+独自の compose を組む必要はなく、リポジトリ同梱の [02-provisioning/node-a/docker-compose.yml](node-a/docker-compose.yml)を全 GPU ノードで共通利用します(vLLM 自体に同梱の OpenAI 互換サーバ `vllm serve` を Docker 公式イメージ `vllm/vllm-openai` 経由で起動する構成。自前の API ラッパーは不要)。
+
+| ノード | 作業ディレクトリ | `MAX_MODEL_LEN` | `TENSOR_PARALLEL_SIZE` |
+|---|---|---:|---:|
+| Node A | `node-a/` | 8192(初期値。モデル要件の最大は 32768) | 1 |
+| Node A-2 | `node-a-2/` | 16384 | 1 |
+| Node A-3(単一 GPU) | `node-a-3/` | 32768 | 1 |
+| Node A-3(2×L40S) | `node-a-3/` | 32768 | 2 |
+
+`GPU_MEMORY_UTILIZATION=0.90`は全ノード共通です。以下は Node A の例で、A-2 / A-3 は各 README の `--env-file` / `-f` 指定を使います。
 
 ```bash
 git clone ${repo_url}

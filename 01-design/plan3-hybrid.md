@@ -3,7 +3,7 @@
 **BM25(キーワード検索)とベクトル検索を併用するハイブリッド検索**を核とした本格構成。
 ベクトル DB に OpenSearch(kuromoji による日本語形態素解析 + k-NN を 1 基盤で両立)を採用し、
 Nginx による TLS 終端、PostgreSQL による会話履歴永続化、LangGraph によるエージェント的な検索フローを備えます。
-基本は Node A(GPU / vLLM)+ Node B(アプリ+データ)の 2 ノードで開始し、負荷に応じて **OpenSearch を Node C(ベクトル DB 専用ノード、全文検索も兼用)に分離**する拡張パスを持ちます。
+基本は GPU 3 ノード(Node A / Node A-2 / Node A-3、vLLM)+ Node B(アプリ+データ)で開始し、負荷に応じて **OpenSearch を Node C(ベクトル DB 専用ノード、全文検索も兼用)に分離**する拡張パスを持ちます。
 
 > **構築ファイル**: [03-deployment/plan3/](../03-deployment/plan3/)(compose + nginx conf + kuromoji 入り OpenSearch イメージ + LangGraph 実装)/ 手順: [デプロイ手順書](../03-deployment/README.md)。本書のコードは設計説明用の抜粋。
 
@@ -44,8 +44,8 @@ flowchart TB
         OWUI --> PG
     end
 
-    subgraph nodeA["Node A: GPU ノード(VRAM 40GB+ / 既存)"]
-        VLLM["vLLM(稼働済み・推論専用)<br/>OpenAI 互換 API :8080"]
+    subgraph gpuNodes["GPU 3 ノード(Node A / A-2 / A-3)"]
+        VLLM["vLLM(稼働済み・推論専用)<br/>モデル別仕様は node-specs.md<br/>OpenAI 互換 API :8080"]
     end
 
     ragapi -->|"生成(HTTP)"| VLLM
@@ -133,7 +133,7 @@ flowchart LR
 ## 運用ポイント
 
 - **メモリ設計**: OpenSearch の JVM ヒープはホストの 50% 以下・32GB 以下。HNSW インデックスはヒープ外メモリを使うため余裕を持たせる
-- **ノード分割の拡張パス**: 全コンポーネントが HTTP で疎結合なため、Node B のメモリが逼迫したら OpenSearch(と PostgreSQL)を Node C に移すだけでよい(compose ファイルの分割と接続 URL の変更のみ。アプリのコード変更は不要)。GPU ノード(Node A)は常に推論専用を維持する
+- **ノード分割の拡張パス**: 全コンポーネントが HTTP で疎結合なため、Node B のメモリが逼迫したら OpenSearch(と PostgreSQL)を Node C に移すだけでよい(compose ファイルの分割と接続 URL の変更のみ。アプリのコード変更は不要)。GPU 3 ノードは常に推論専用を維持する
 - **インデックス設計**: `knowledge-v1` のような versioned index + エイリアスで、埋め込みモデル変更時の全再インデックスを無停止で実施
 - **セキュリティ**: Nginx で TLS 終端(Let's Encrypt / 社内 CA)。OpenSearch Security Plugin を有効化し、`rag-api`(検索専用)と `ingest`(更新用)を別ユーザーにする。検証用 compose は固定イメージ内のデモ CA / 証明書でコンテナ間 TLS を検証し、本番では組織 CA のノード証明書へ交換する
 - **評価**: 検索品質は Ragas(OSS)等で Hit Rate / MRR / Faithfulness を定点観測し、チャンクサイズや重みの変更効果を計測する

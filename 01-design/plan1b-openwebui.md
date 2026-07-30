@@ -21,8 +21,8 @@ flowchart LR
         EMB <--> CH
     end
 
-    subgraph nodeA["Node A: GPU ノード(VRAM 40GB+ / 既存)"]
-        VLLM["vLLM(稼働済み・推論専用)<br/>OpenAI 互換 API :8080"]
+    subgraph gpuNodes["GPU 3 ノード(Node A / A-2 / A-3)"]
+        VLLM["vLLM(稼働済み・推論専用)<br/>モデル別仕様は node-specs.md<br/>OpenAI 互換 API :8080"]
     end
 
     U -->|"HTTPS :443"| NGINX

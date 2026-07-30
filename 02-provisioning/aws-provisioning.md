@@ -13,6 +13,8 @@ AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化す�
 | ノード | 説明 | ホスト名 | 既定 Instance Type | ルート EBS |
 |---|---|---|---|---|
 | Node A | 最小構成(vLLM) | llm-001 | g6e.xlarge | 200GB |
+| Node A-2 | 最小構成(vLLM) | llm-002 | g6e.xlarge | 200GB |
+| Node A-3 | 最小構成(vLLM) | llm-003 | p5.4xlarge | 300GB |
 | Node B | 案1 最小構成 | app-001 | t3.large | 100GB |
 | Node B | 案1b 最小構成 | app-001b | t3.large | 100GB |
 | Node B | 案2 最小構成 | app-002 | m7i.xlarge | 100GB |
@@ -21,7 +23,7 @@ AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化す�
 
 ## 方針・設計
 
-- **単一サブネット**: 6 ノードすべてを 1 つのプライベートサブネット(192.168.0.0/26)に収容する
+- **単一サブネット**: 8 ノードすべてを 1 つのプライベートサブネット(192.168.0.0/26)に収容する
 - **NAT Gateway は必要時のみ**: 定常運用ではインターネット不要(モデル・イメージは AMI/EBS に取得済み、利用者は VPN 等の閉域から WebUI へ)。パッケージ取得やモデルダウンロードが必要なセットアップ時だけ NAT を作成し、AMI 化後に削除する
   - **外部 IdP の OIDC は例外**: The Internet 上の IdP には NAT を常設し、別 VPC 上の IdP には VPC ピアリングを使う(§2.3)。検証用 Keycloak だけを使う場合は既定どおり削除する
   - NAT Gateway は IGW へ抜ける**専用のパブリックサブネット**に置く必要があり、ワークロード用サブネットには同居できない。そのため NAT 用の一時サブネット(192.168.0.64/28)を NAT と同じライフサイクルで作成・削除する(ワークロードは常に単一サブネットのまま)
@@ -39,6 +41,8 @@ flowchart TB
         subgraph snet["subnet 192.168.0.0/26(プライベート・常設)"]
             EICE["EC2 Instance Connect<br/>Endpoint(常設・無料)"]
             A["llm-001<br/>192.168.0.10"]
+            A2["llm-002<br/>192.168.0.11"]
+            A3["llm-003<br/>192.168.0.12"]
             B1["app-001<br/>192.168.0.21"]
             B1b["app-001b<br/>192.168.0.24"]
             B2["app-002<br/>192.168.0.22"]
@@ -51,7 +55,7 @@ flowchart TB
         end
     end
     ADMIN -->|"SSH over EICE(22)"| EICE
-    EICE --> A & B1 & B1b & B2 & B3 & P
+    EICE --> A & A2 & A3 & B1 & B1b & B2 & B3 & P
     NAT --> IGW
     snet -.->|"0.0.0.0/0(NAT 稼働時のみ)"| NAT
 ```
@@ -89,6 +93,8 @@ nat_subnet_cidr=192.168.0.64/28 # NAT 用(一時・パブリック)
 
 # --- ノード別 Instance Type ---
 instance_type_llm=g6e.xlarge
+instance_type_llm2=g6e.xlarge
+instance_type_llm3=p5.4xlarge
 instance_type_app1=t3.large
 instance_type_app1b=t3.large
 instance_type_app2=m7i.xlarge
@@ -97,6 +103,8 @@ instance_type_perf=t3.medium
 
 # --- ノード別 ルート EBS(GB, gp3)---
 root_size_llm=200
+root_size_llm2=200
+root_size_llm3=300
 root_size_app1=100
 root_size_app1b=100
 root_size_app2=100
@@ -106,6 +114,8 @@ root_device=/dev/sda1           # Ubuntu/DLAMI のルートデバイス
 
 # --- ノード別 固定プライベート IP ---
 ip_llm=192.168.0.10
+ip_llm2=192.168.0.11
+ip_llm3=192.168.0.12
 ip_app1=192.168.0.21
 ip_app1b=192.168.0.24
 ip_app2=192.168.0.22
@@ -209,15 +219,17 @@ EOF
 }
 
 llm_id=$(launch_node  llm-001 ${instance_type_llm}  ${dlami}      ${root_size_llm}  ${ip_llm})
+llm2_id=$(launch_node llm-002 ${instance_type_llm2} ${dlami}      ${root_size_llm2} ${ip_llm2})
+llm3_id=$(launch_node llm-003 ${instance_type_llm3} ${dlami}      ${root_size_llm3} ${ip_llm3})
 app1_id=$(launch_node app-001 ${instance_type_app1} ${ubuntu_ami} ${root_size_app1} ${ip_app1})
 app1b_id=$(launch_node app-001b ${instance_type_app1b} ${ubuntu_ami} ${root_size_app1b} ${ip_app1b})
 app2_id=$(launch_node app-002 ${instance_type_app2} ${ubuntu_ami} ${root_size_app2} ${ip_app2})
 app3_id=$(launch_node app-003 ${instance_type_app3} ${ubuntu_ami} ${root_size_app3} ${ip_app3})
 perf_id=$(launch_node perf-001 ${instance_type_perf} ${ubuntu_ami} ${root_size_perf} ${ip_perf})
 
-aws ec2 wait instance-running --instance-ids ${llm_id} ${app1_id} ${app1b_id} ${app2_id} ${app3_id} ${perf_id}
+aws ec2 wait instance-running --instance-ids ${llm_id} ${llm2_id} ${llm3_id} ${app1_id} ${app1b_id} ${app2_id} ${app3_id} ${perf_id}
 rm -v user-data-*.sh
-echo "llm-001=${llm_id} app-001=${app1_id} app-001b=${app1b_id} app-002=${app2_id} app-003=${app3_id} perf-001=${perf_id}"
+echo "llm-001=${llm_id} llm-002=${llm2_id} llm-003=${llm3_id} app-001=${app1_id} app-001b=${app1b_id} app-002=${app2_id} app-003=${app3_id} perf-001=${perf_id}"
 ```
 
 この時点ではインターネット未接続(隔離)。シェル接続は §1.4 の EICE で行う(NAT 不要)。パッケージ取得・モデル DL には**インスタンス自身の外向き通信**が要るため、§2 で NAT を作成してからセットアップ([デプロイ手順書](../03-deployment/README.md))を行う。
@@ -270,6 +282,14 @@ Host ragsys-llm-001
     HostName ${llm_id}
     LocalForward 8080 localhost:8080
 
+Host ragsys-llm-002
+    HostName ${llm2_id}
+    LocalForward 8180 localhost:8080
+
+Host ragsys-llm-003
+    HostName ${llm3_id}
+    LocalForward 8280 localhost:8080
+
 Host ragsys-app-001
     HostName ${app1_id}
     LocalForward 8000 localhost:8000
@@ -295,14 +315,18 @@ EOF
 ```bash
 # 各ノードへ接続(-N: シェルを開かずフォワードのみ保持)
 ssh -N ragsys-app-002    # 案2 の WebUI
-ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-001b(案1b)/ ssh -N ragsys-app-003(案3)/ ssh -N ragsys-llm-001(vLLM API)/ ssh -N ragsys-perf-001(Locust Web UI 8089)
+ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-001b(案1b)/ ssh -N ragsys-app-003(案3)
+ssh -N ragsys-llm-001    # vLLM API / ssh -N ragsys-llm-002(Node A-2)/ ssh -N ragsys-llm-003(Node A-3)
+ssh -N ragsys-perf-001   # Locust Web UI 8089
 ```
 
-接続後、Host に対応する URL をブラウザで開く(llm-001 は WebUI ではなく vLLM API 用)。
+接続後、Host に対応する URL をブラウザで開く(llm-001 / llm-002 / llm-003 は WebUI ではなく vLLM API 用)。
 
 | Host | ノード | ローカル → リモート | アクセス |
 |---|---|---|---|
 | ragsys-llm-001 | llm-001 | 8080 → :8080 | `curl http://localhost:8080/v1/models`(vLLM API・デバッグ用) |
+| ragsys-llm-002 | llm-002 | 8180 → :8080 | `curl http://localhost:8180/v1/models`(vLLM API・デバッグ用) |
+| ragsys-llm-003 | llm-003 | 8280 → :8080 | `curl http://localhost:8280/v1/models`(vLLM API・デバッグ用) |
 | ragsys-app-001 | app-001(案1) | 8000 → :8000 | http://localhost:8000 |
 | ragsys-app-001b | app-001b(案1b) | 8441 → :443 | https://localhost:8441 |
 | ragsys-app-002 | app-002(案2) | 8442 → :443 | https://localhost:8442 |
@@ -358,7 +382,7 @@ cat > stop-schedule.json <<EOF
   "Target": {
     "Arn": "arn:aws:scheduler:::aws-sdk:ec2:stopInstances",
     "RoleArn": "${scheduler_role_arn}",
-    "Input": "{\"InstanceIds\":[\"${llm_id}\",\"${app1_id}\",\"${app1b_id}\",\"${app2_id}\",\"${app3_id}\",\"${perf_id}\"]}"
+    "Input": "{\"InstanceIds\":[\"${llm_id}\",\"${llm2_id}\",\"${llm3_id}\",\"${app1_id}\",\"${app1b_id}\",\"${app2_id}\",\"${app3_id}\",\"${perf_id}\"]}"
   }
 }
 EOF
@@ -367,7 +391,7 @@ rm -v stop-schedule.json
 ```
 
 - `cron(0 18 * * ? *)` + `Asia/Tokyo` で毎日 18:00 JST(アカウントのリージョンに依らずタイムゾーン指定が効く)。
-- 停止対象は `Input` の `InstanceIds`。GPU ノードだけ止めてアプリノードは稼働させたい場合は `${llm_id}` のみにする。
+- 停止対象は `Input` の `InstanceIds`。GPU ノードだけ止めてアプリノードは稼働させたい場合は `${llm_id}` `${llm2_id}` `${llm3_id}` のみにする。
 - 始業時に自動起動もしたい場合は、`Arn` を `...ec2:startInstances`、`Name` を `${project}-start-0900`、cron を `cron(0 9 * * ? *)` にして同様にもう 1 本作る(ポリシーに `ec2:StartInstances` の追加が必要)。
 - 確認・削除:
 

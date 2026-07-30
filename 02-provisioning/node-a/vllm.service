@@ -11,12 +11,14 @@ Wants=network-online.target
 User=vllm
 Group=vllm
 Environment=HF_HOME=/opt/vllm/hf-cache
+# Node A の 32k 対応モデルに対する初期運用値は 8192。モデル自体の上限ではない
 ExecStart=/opt/vllm/.venv/bin/vllm serve /opt/models/<your-hf-model> \
     --served-model-name <your-hf-model-name> \
     --host 0.0.0.0 \
     --port 8080 \
     --gpu-memory-utilization 0.90 \
     --max-model-len 8192 \
+    --tensor-parallel-size 1 \
     --api-key <change-me>
 Restart=always
 RestartSec=10

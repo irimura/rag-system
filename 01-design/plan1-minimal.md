@@ -1,7 +1,7 @@
 # 案1: シングルプロセス最小構成(PoC / 個人利用向け)
 
 WebUI・RAG ロジック・ベクトル DB を **1 つの Python プロセス(Chainlit)に同居**させる最小構成。
-vLLM が稼働する GPU ノード(Node A)とは分離し、**アプリノード(Node B)上の 1 プロセス**で完結させます。
+vLLM が稼働する GPU 3 ノード(Node A / Node A-2 / Node A-3)とは分離し、**アプリノード(Node B)上の 1 プロセス**で完結させます。
 Node B 側の標準デプロイは Docker Compose で、必要に応じて venv + systemd だけの代替構成も選べます。
 コードを書かずに同等の最小構成を試す場合は [案1b](plan1b-openwebui.md)を選びます。
 
@@ -30,8 +30,8 @@ flowchart TB
         EMB -->|"ベクトル登録"| CH
     end
 
-    subgraph nodeA["Node A: GPU ノード(VRAM 40GB+ / 既存)"]
-        VLLM["vLLM(稼働済み・推論専用)<br/>OpenAI 互換 API :8080"]
+    subgraph gpuNodes["GPU 3 ノード(Node A / A-2 / A-3)"]
+        VLLM["vLLM(稼働済み・推論専用)<br/>モデル別仕様は node-specs.md<br/>OpenAI 互換 API :8080"]
     end
 
     LC -->|"chat/completions(HTTP)"| VLLM
@@ -47,7 +47,7 @@ flowchart TB
 | 長所 | Node B 側の構成要素が最少。依存はすべて pip。障害点が少なくデバッグ容易。GPU ノードには一切手を入れない |
 | 短所 | プロセス再起動で会話履歴消失。同時アクセスに弱い。Embedding/Rerank が API プロセスの CPU/メモリを消費 |
 | ベクトル DB | Chroma を**組み込みモード**(サーバ不要、ローカルディレクトリに永続化)で使用。データは Node B に閉じる |
-| Embedding | Node B のプロセス内で sentence-transformers を **CPU 実行**(e5 / bge クラスは CPU で実用速度)。Node A の VRAM は LLM 専用のため使わない |
+| Embedding | Node B のプロセス内で sentence-transformers を **CPU 実行**(e5 / bge クラスは CPU で実用速度)。GPU 3 ノードの VRAM は LLM 専用のため使わない |
 | 移行性 | LangChain の `VectorStore` 抽象のおかげで、案2 の Qdrant へはコード数行の変更で移行可能 |
 
 ## 認証・認可
@@ -102,7 +102,7 @@ from langchain.retrievers import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors import CrossEncoderReranker
 from langchain_community.cross_encoders import HuggingFaceCrossEncoder
 
-llm = ChatOpenAI(  # Node A(GPU ノード)の vLLM を指定
+llm = ChatOpenAI(  # 利用する GPU ノードの vLLM を指定
     base_url="http://node-a.example.internal:8080/v1", api_key="dummy",
     model="your-hf-model-name",
 )

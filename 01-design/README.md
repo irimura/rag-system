@@ -1,6 +1,6 @@
 # vLLM + LangChain による RAG システム設計
 
-本書はシステムの全体像、2ノード構成、実装4案、精度向上の要点、ライセンスをまとめた設計資料です。工程全体の入口は [ルート README](../README.md) を参照してください。
+本書はシステムの全体像、GPU 3 ノード + Node B 構成、実装4案、精度向上の要点、ライセンスをまとめた設計資料です。工程全体の入口は [ルート README](../README.md) を参照してください。
 
 ## 1. 全体像 — RAG に必要な構成要素
 
@@ -22,7 +22,7 @@ flowchart LR
         EM2["Embedding Model"]
         RET["Retriever"]
         RR["Reranker"]
-        LLM["vLLM(Node A / GPU)<br/>OpenAI 互換 API"]
+        LLM["vLLM(Node A / A-2 / A-3)<br/>OpenAI 互換 API"]
         UI --> API
         API --> EM2 --> RET --> RR --> LLM
         LLM --> API --> UI
@@ -54,8 +54,8 @@ flowchart LR
 
 ## 2. サーバ構成方針 — GPU ノードとアプリノードの分離
 
-vLLM の要求スペック(GPU VRAM 40GB 以上)を踏まえ、通常利用は全案共通で **Node A + Node B の 2 ノード構成**を基本とし、性能試験時は性能測定用ノード(perf-001)を追加します。
-RDB を DB サーバに分離するのと同じ考え方で、高価な GPU ノードを推論専用に隔離し、データを持つコンポーネントを通常サーバ側に集約します。
+モデルごとの GPU / VRAM 要件を踏まえ、通常利用は全案共通で **GPU 3 ノード(Node A / Node A-2 / Node A-3)+ Node B**を基本とし、性能試験時は性能測定用ノード(perf-001)を追加します。
+RDB を DB サーバに分離するのと同じ考え方で、高価な GPU 3 ノードをそれぞれ推論専用に隔離し、データを持つコンポーネントを通常サーバ側に集約します。各モデル・最大シーケンス長・重み量子化方式は [ノードスペック選定](node-specs.md) §1 を正とします。
 
 ```mermaid
 flowchart LR
@@ -74,26 +74,30 @@ flowchart LR
         API -.-> PG
     end
 
-    subgraph nodeA["Node A: GPU ノード(VRAM 40GB+ / 既存)"]
-        VLLM["vLLM(推論専用・ステートレス)<br/>OpenAI 互換 API :8080"]
+    subgraph gpuNodes["GPU 3 ノード: vLLM 推論専用"]
+        A["Node A<br/>GPTQ 4bit / 32k"]
+        A2["Node A-2<br/>GPTQ 8bit / 16k"]
+        A3["Node A-3<br/>16bit 非量子化 / 32k"]
     end
 
     U --> UI
     PERF -->|"負荷試験<br/>(HTTPS)"| UI
-    API -->|"chat/completions<br/>(HTTP)"| VLLM
+    API -->|"chat/completions<br/>(HTTP :8080)"| A
+    API --> A2
+    API --> A3
 ```
 
 ### 分離の理由
 
 | 観点 | 内容 |
 |---|---|
-| リソース競合の回避 | vLLM はデフォルトで VRAM の約 9 割を確保し、CPU も前処理で消費する。OpenSearch の JVM ヒープや embedding モデルを同居させると互いに OOM リスクを持ち込み合う |
+| リソース競合の回避 | 各 GPU ノードの vLLM は VRAM の約 9 割を確保し、CPU も前処理で消費する。GPU ノード同士や OpenSearch の JVM ヒープ、embedding モデルを同居させると互いに OOM リスクを持ち込み合う |
 | データとステートの分離 | vLLM は完全にステートレス。一方 Vector DB・PostgreSQL・取り込み済みインデックスは「壊れたら困るデータ」。CUDA/ドライバ更新や再起動の頻度が高い GPU ノードにデータを置かない |
 | ライフサイクルの独立 | GPU ノードの増強・交換・他用途との共用がデータ側に影響しない。バックアップ対象は Node B に集約される |
 
 ### 設計上の補足
 
-- **Embedding / Rerank は Node B の CPU で実行する。** bge-m3 / bge-reranker クラス(2GB 前後)は CPU で実用速度が出る。Node A の VRAM は LLM が使い切る前提のため、GPU への同居(`--gpu-memory-utilization` を下げて空ける)は検証段階では避ける。取り込みバッチが遅い場合にのみ、Node B への小型 GPU 追加を検討する
+- **Embedding / Rerank は Node B の CPU で実行する。** bge-m3 / bge-reranker クラス(2GB 前後)は CPU で実用速度が出る。全 GPU ノードの VRAM は各 LLM が使い切る前提のため、GPU への同居(`--gpu-memory-utilization` を下げて空ける)は検証段階では避ける。取り込みバッチが遅い場合にのみ、Node B への小型 GPU 追加を検討する
 - **検証段階で機能毎の完全分割(WebUI / API / DB を別ノードに)はやり過ぎ。** 全コンポーネントは HTTP API(OpenAI 互換・TEI・Qdrant 等)で疎結合なので、Node B 内は Docker Compose のコンテナ分離で責務を分けておけば、負荷が見えてきた段階で compose ファイルの分割と接続 URL の変更だけでノードを分割できる(案3 では DB を Node C に分離する拡張パスを記載)
 - ノード間は HTTP のみ。LAN 内であればレイテンシへの影響は無視できる
 
@@ -106,7 +110,7 @@ flowchart LR
 | | 案1: 最小構成 | 案1b: コード不要最小構成 | 案2: 標準構成(推奨) | 案3: 本格構成 |
 |---|---|---|---|---|
 | 詳細 | [plan1-minimal.md](plan1-minimal.md) | [plan1b-openwebui.md](plan1b-openwebui.md) | [plan2-standard.md](plan2-standard.md) | [plan3-hybrid.md](plan3-hybrid.md) |
-| ノード構成 | Node A + Node B | Node A + Node B | Node A + Node B | Node A + Node B(将来 DB を Node C に分離可) |
+| ノード構成 | GPU 3 ノード + Node B | GPU 3 ノード + Node B | GPU 3 ノード + Node B | GPU 3 ノード + Node B(将来 DB を Node C に分離可) |
 | WebUI | Chainlit(API 同居) | Open WebUI + Nginx(TLS) | Open WebUI + Nginx(TLS) | Open WebUI + Nginx(TLS) |
 | RAG API | Chainlit プロセス内(LangChain) | Open WebUI 内蔵(RAG / コード不要) | FastAPI + LangChain(rag-api 専用コンテナ) | FastAPI + LangGraph(rag-api 専用コンテナ) |
 | ベクトル DB | Chroma(Chainlit プロセス内) | Open WebUI 内蔵(Chroma) | Qdrant(専用コンテナ) | OpenSearch(専用コンテナ / Hybrid)または Milvus(専用コンテナ) |

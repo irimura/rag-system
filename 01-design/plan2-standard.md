@@ -1,7 +1,7 @@
 # 案2: Docker Compose 標準構成(部門利用向け・推奨)
 
 各コンポーネントをコンテナに分離し、**アプリノード(Node B)上に Docker Compose で構築**する標準構成。
-vLLM は GPU ノード(Node A)で稼働済みのものを HTTP 経由で利用し、Node A には手を入れません。
+vLLM は GPU 3 ノード(Node A / Node A-2 / Node A-3)で稼働済みのものを HTTP 経由で利用し、GPU ノードには手を入れません。モデル別仕様は [node-specs.md](node-specs.md) を参照してください。
 WebUI に Open WebUI(認証・会話履歴内蔵)、ベクトル DB に Qdrant、Embedding/Rerank は TEI(Text Embeddings Inference)専用コンテナ(CPU 版)に分離します。
 
 > **構築ファイル**: [03-deployment/plan2/](../03-deployment/plan2/)(完全版 compose + rag-api 実装)/ 手順: [デプロイ手順書](../03-deployment/README.md)。本書のコードは設計説明用の抜粋。
@@ -33,8 +33,8 @@ flowchart TB
         LC -->|"rerank → top4"| TEI_R
     end
 
-    subgraph nodeA["Node A: GPU ノード(VRAM 40GB+ / 既存)"]
-        VLLM["vLLM(稼働済み・推論専用)<br/>OpenAI 互換 API :8080"]
+    subgraph gpuNodes["GPU 3 ノード(Node A / A-2 / A-3)"]
+        VLLM["vLLM(稼働済み・推論専用)<br/>モデル別仕様は node-specs.md<br/>OpenAI 互換 API :8080"]
     end
 
     LC -->|"生成(HTTP)"| VLLM
@@ -87,7 +87,7 @@ services:
     build: ./rag-api          # FastAPI + LangChain
     ports: ["8000:8000"]
     environment:
-      # Node A(GPU ノード)の vLLM を LAN 経由で指定
+      # 利用する GPU ノードの vLLM を LAN 経由で指定
       - VLLM_BASE_URL=http://node-a.example.internal:8080/v1
       - QDRANT_URL=http://qdrant:6333
       - TEI_EMBED_URL=http://tei-embed:80
@@ -116,7 +116,7 @@ volumes:
   hf-cache:
 ```
 
-> TEI は CPU 版で開始します(bge-m3 / bge-reranker クラスは CPU で実用速度)。取り込みバッチが遅くて困る場合の高速化は、**Node B への小型 GPU 追加**(TEI イメージを GPU 版タグに変更し `deploy.resources.reservations.devices` で割り当て)を第一候補としてください。Node A への同居(vLLM の `--gpu-memory-utilization` を下げて VRAM を空ける)も技術的には可能ですが、VRAM 40GB を LLM が使い切る前提のため検証段階では推奨しません。
+> TEI は CPU 版で開始します(bge-m3 / bge-reranker クラスは CPU で実用速度)。取り込みバッチが遅くて困る場合の高速化は、**Node B への小型 GPU 追加**(TEI イメージを GPU 版タグに変更し `deploy.resources.reservations.devices` で割り当て)を第一候補としてください。GPU 3 ノードへの同居(vLLM の `--gpu-memory-utilization` を下げて VRAM を空ける)も技術的には可能ですが、各 LLM が VRAM を使い切る前提のため検証段階では推奨しません。
 
 ## RAG API 実装例(rag-api/main.py 抜粋)
 

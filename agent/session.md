@@ -1,6 +1,6 @@
 # セッションコンテキスト(コーディングエージェント向け引き継ぎ)
 
-最終更新: 2026-07-17(§18 NAT 関連 ID 再取得の対応を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
+最終更新: 2026-07-30(§20 GPU 推論ノード増設を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
 
 このリポジトリは **vLLM + LangChain による日本語 RAG システムの設計・構築・評価ドキュメント一式**である。コードよりドキュメントが主体で、`03-deployment/` のアプリコードはサンプル実装(構文検証済み・実ビルド/実行は未実施)。本ファイルは過去セッションの決定事項・規約・注意点の引き継ぎであり、**ここに書かれた決定を無断で覆さないこと**(変更するときはユーザーに確認する)。
 
@@ -15,10 +15,12 @@
 
 | ノード | 役割 | ホスト名 | Instance Type | AMI |
 |---|---|---|---|---|
-| **Node A** | GPU / vLLM 推論専用 | llm-001 | g6e.xlarge(最小)〜 g6e.2xlarge(推奨) | Deep Learning Base OSS Nvidia Driver GPU AMI (**Ubuntu 24.04**) |
+| **Node A** | GPU / vLLM(GPTQ 4bit・最大32k) | llm-001 | g6e.xlarge(最小)〜 g6e.2xlarge(推奨) | Deep Learning Base OSS Nvidia Driver GPU AMI (**Ubuntu 24.04**) |
+| **Node A-2** | GPU / vLLM(GPTQ 8bit・最大16k) | llm-002 | g6e.xlarge(最小)〜 g6e.2xlarge(推奨) | 同上 |
+| **Node A-3** | GPU / vLLM(16bit非量子化・最大32k) | llm-003 | p5.4xlarge(単一H100 80GB推奨) / g6e.12xlarge(TP=2)等 | 同上 |
 | **Node B** | アプリ+データ(WebUI/RAG API/ベクトル DB/TEI) | app-001/002/003(案1/2/3) | t3.large / m7i.xlarge / r7i.xlarge(案別最小) | Ubuntu Server 24.04 LTS(素の Canonical AMI) |
 
-- GPU 確定要件: **Ampere 世代以降・VRAM 40GB+・CUDA 12.8 対応、NVIDIA Driver + NVIDIA Container Toolkit**
+- GPU 確定要件: **Ampere 世代以降・Node A/A-2はVRAM 40GB+、Node A-3は80GB+・CUDA 12.8 対応、NVIDIA Driver + NVIDIA Container Toolkit**
 - **OS は Ubuntu 24.04 で確定**(利用する vLLM Docker イメージが 24.04 ベースのため。22.04 に戻さない)
 
 ## 2. リポジトリ構成と各ファイルの役割
@@ -35,7 +37,7 @@
 
 ## 3. AWS 設計の確定事項(02-provisioning/aws-provisioning.md)
 
-- **単一プライベートサブネット** 192.168.0.0/26(VPC 192.168.0.0/24)に全ノード収容。固定プライベート IP(llm=.10, app=.21/.22/.23)
+- **単一プライベートサブネット** 192.168.0.0/26(VPC 192.168.0.0/24)に全ノード収容。固定プライベート IP(llm=.10/.11/.12, app=.21/.22/.23)
 - **Route 53 PHZ は不採用**(固定 IP のメリット優先、とユーザーが明示判断)
 - **NAT Gateway と IGW は「必要時のみ」**: セットアップ時に一時サブネット 192.168.0.64/28 ごと作成し、AMI 化後に **IGW も含めて**削除。定常運用はインターネット経路ゼロの隔離
 - **シェルアクセスは EICE**(SSM ではない): 隔離状態でも接続可・無料・インスタンス IAM 不要が採用理由。EICE のトンネルは **22/3389 限定**のため、WebUI へは SSH の LocalForward(`~/.ssh/config` に `Host ragsys-*` 共通設定 + `ragsys-llm-001` / `ragsys-app-00N` を登録、`ssh -N ragsys-app-002` で接続)
@@ -209,3 +211,11 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - perf-001 は既存ワークロードサブネットと単一 SG に収容し、EICE 経由で管理する。Locust Web UI は `ragsys-perf-001` の SSH LocalForward 8089 で管理者端末へ転送する
 - Locust は Open WebUI の nginx 443 経由で測定し、ユーザー体感に近い応答時間を対象とする。案1(Chainlit)は対象外で、案1b / 案2 / 案3を測定する。同一 SG 内通信は許可済みのため SG 変更は不要
 - `07-performance/` に perf-001 セットアップ、Headless / Web UI の測定・判定・記録・クリーンアップ手順、`POST /api/chat/completions` 用 `locustfile.py` を集約した
+
+## 20. GPU 推論ノード増設(2026-07-30)
+
+- 既存 Node A は GPTQ 4bit・最大32k・VRAM 40GB以上。Node A-2(GPTQ 8bit・最大16k・40GB以上)と Node A-3(16bit非量子化・最大32k・80GB以上)を追加し、GPU 3ノード + Node B構成へ変更した
+- Node A/A-2は単一L40Sのg6e.2xlarge推奨(g6e.xlarge最小)。Node A-3は単一GPU 80GBを原則としp5.4xlargeを推奨。代替としてg6e.12xlarge搭載4×L40Sのうち2GPUを`--tensor-parallel-size 2`で使う案を許容する
+- vLLMは全ノード`--gpu-memory-utilization 0.90`。最大長はA-2=16384、A-3=32768。Node A既存設定の8192は32k対応モデルの初期運用値として維持した
+- `02-provisioning/node-a/docker-compose.yml`と`vllm.service`を共通資材とし、`node-a-2/`・`node-a-3/`にノード別`.env.example`と利用READMEを置く
+- 全ノードは単一 SG の自己参照ルールで相互通信し、vLLM は全 GPU ノードで`--api-key`必須(多層防御)、Ubuntu 24.04 DLAMI、CUDA 12.8、夜間停止の既存方針を維持する
