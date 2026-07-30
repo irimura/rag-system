@@ -215,7 +215,7 @@ docker compose down
 ## 7. 運用上の注意
 
 - **利用しない時間帯は EC2 を停止する**。手動停止のほか、[aws-provisioning.md §1.5](aws-provisioning.md) の EventBridge Scheduler で毎日 18:00 に自動停止できる
-- **モデル格納用に十分な EBS 容量を確保する**(gp3 200GB〜。サイジングの考え方は [node-specs.md](../01-design/node-specs.md) §3)
-- **Security Group は最小限のみ開放する**。外部への SSH は開けず EICE 経由に統一し、vLLM API(8080)は Node B の SG からのみ許可する([node-specs.md](../01-design/node-specs.md) §4)
+- **モデル格納用に十分な EBS 容量を確保する**(gp3 200GB〜。サイジングの考え方は [node-specs.md](../01-design/node-specs.md) §4)
+- **Security Group は最小限のみ開放する**。外部への SSH は開けず EICE 経由に統一し、vLLM API(8080)は Node B の SG からのみ許可する([node-specs.md](../01-design/node-specs.md) §5)
 - **インターネット接続はセットアップ時のみ**。Docker イメージ取得・モデルダウンロードにはインスタンス自身の外向き通信が必要なため、その間だけ [aws-provisioning.md §2](aws-provisioning.md) の NAT Gateway を一時作成し、完了後は削除する(定常運用は隔離)
 - GPU 利用状況(使用率・VRAM 消費量)は `nvidia-smi` で定期的に監視する

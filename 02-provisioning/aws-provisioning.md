@@ -3,6 +3,8 @@
 AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化する手順書です。
 パラメータ(Instance Type 等)は先頭の変数ブロックで指定し、各手順は変数を参照します。
 
+> コマンド中の `${...}` は環境に合わせて置換してください。
+
 - スペック・AMI・料金の根拠: [node-specs.md](../01-design/node-specs.md)
 - OS 内のセットアップ(Docker・vLLM・各案の構築): [デプロイ手順書](../03-deployment/README.md) / [03-deployment/](../03-deployment/)
 
@@ -15,10 +17,11 @@ AWS CLI(Bash)で本 RAG システムのノードを構築・削除・AMI 化す�
 | Node B | 案1b 最小構成 | app-001b | t3.large | 100GB |
 | Node B | 案2 最小構成 | app-002 | m7i.xlarge | 100GB |
 | Node B | 案3 最小構成 | app-003 | r7i.xlarge | 200GB |
+| 性能測定 | 性能測定(Locust 実行) | perf-001 | t3.medium | 30GB |
 
 ## 方針・設計
 
-- **単一サブネット**: 5 ノードすべてを 1 つのプライベートサブネット(192.168.0.0/26)に収容する
+- **単一サブネット**: 6 ノードすべてを 1 つのプライベートサブネット(192.168.0.0/26)に収容する
 - **NAT Gateway は必要時のみ**: 定常運用ではインターネット不要(モデル・イメージは AMI/EBS に取得済み、利用者は VPN 等の閉域から WebUI へ)。パッケージ取得やモデルダウンロードが必要なセットアップ時だけ NAT を作成し、AMI 化後に削除する
   - **外部 IdP の OIDC は例外**: The Internet 上の IdP には NAT を常設し、別 VPC 上の IdP には VPC ピアリングを使う(§2.3)。検証用 Keycloak だけを使う場合は既定どおり削除する
   - NAT Gateway は IGW へ抜ける**専用のパブリックサブネット**に置く必要があり、ワークロード用サブネットには同居できない。そのため NAT 用の一時サブネット(192.168.0.64/28)を NAT と同じライフサイクルで作成・削除する(ワークロードは常に単一サブネットのまま)
@@ -40,6 +43,7 @@ flowchart TB
             B1b["app-001b<br/>192.168.0.24"]
             B2["app-002<br/>192.168.0.22"]
             B3["app-003<br/>192.168.0.23"]
+            P["perf-001<br/>192.168.0.20"]
             SG(["Security Group<br/>rag-system-ec2-sg"])
         end
         subgraph natnet["subnet 192.168.0.64/28(NAT・IGW 用・一時)"]
@@ -47,12 +51,12 @@ flowchart TB
         end
     end
     ADMIN -->|"SSH over EICE(22)"| EICE
-    EICE --> A & B1 & B1b & B2 & B3
+    EICE --> A & B1 & B1b & B2 & B3 & P
     NAT --> IGW
     snet -.->|"0.0.0.0/0(NAT 稼働時のみ)"| NAT
 ```
 
-> 以降のコマンド中の変数は §0.2 で定義する。`${user_cidr}` 等の環境依存値は自分の環境に合わせて編集すること。
+> 以降のコマンド中の変数は §0.2 で定義する。
 
 ---
 
@@ -89,6 +93,7 @@ instance_type_app1=t3.large
 instance_type_app1b=t3.large
 instance_type_app2=m7i.xlarge
 instance_type_app3=r7i.xlarge
+instance_type_perf=t3.medium
 
 # --- ノード別 ルート EBS(GB, gp3)---
 root_size_llm=200
@@ -96,6 +101,7 @@ root_size_app1=100
 root_size_app1b=100
 root_size_app2=100
 root_size_app3=200
+root_size_perf=30
 root_device=/dev/sda1           # Ubuntu/DLAMI のルートデバイス
 
 # --- ノード別 固定プライベート IP ---
@@ -104,6 +110,7 @@ ip_app1=192.168.0.21
 ip_app1b=192.168.0.24
 ip_app2=192.168.0.22
 ip_app3=192.168.0.23
+ip_perf=192.168.0.20
 
 # --- ベース AMI 検索条件 ---
 canonical_owner=099720109477    # Canonical(Ubuntu)公式アカウント
@@ -206,10 +213,11 @@ app1_id=$(launch_node app-001 ${instance_type_app1} ${ubuntu_ami} ${root_size_ap
 app1b_id=$(launch_node app-001b ${instance_type_app1b} ${ubuntu_ami} ${root_size_app1b} ${ip_app1b})
 app2_id=$(launch_node app-002 ${instance_type_app2} ${ubuntu_ami} ${root_size_app2} ${ip_app2})
 app3_id=$(launch_node app-003 ${instance_type_app3} ${ubuntu_ami} ${root_size_app3} ${ip_app3})
+perf_id=$(launch_node perf-001 ${instance_type_perf} ${ubuntu_ami} ${root_size_perf} ${ip_perf})
 
-aws ec2 wait instance-running --instance-ids ${llm_id} ${app1_id} ${app1b_id} ${app2_id} ${app3_id}
+aws ec2 wait instance-running --instance-ids ${llm_id} ${app1_id} ${app1b_id} ${app2_id} ${app3_id} ${perf_id}
 rm -v user-data-*.sh
-echo "llm-001=${llm_id} app-001=${app1_id} app-001b=${app1b_id} app-002=${app2_id} app-003=${app3_id}"
+echo "llm-001=${llm_id} app-001=${app1_id} app-001b=${app1b_id} app-002=${app2_id} app-003=${app3_id} perf-001=${perf_id}"
 ```
 
 この時点ではインターネット未接続(隔離)。シェル接続は §1.4 の EICE で行う(NAT 不要)。パッケージ取得・モデル DL には**インスタンス自身の外向き通信**が要るため、§2 で NAT を作成してからセットアップ([デプロイ手順書](../03-deployment/README.md))を行う。
@@ -245,7 +253,7 @@ aws ec2-instance-connect ssh --instance-id ${app1_id} --os-user ubuntu --connect
 
 #### 管理者端末から WebUI へアクセス(SSH ポートフォワード)
 
-EICE のトンネルは 22/3389 のみ許可されるため、WebUI ポート(案1=8000 / 案1b・案2・案3=80/443)へ直接トンネルはできない。EICE 経由で SSH ログインし、その中でローカルフォワードして運ぶ。インスタンスごとに `~/.ssh/config` へ登録すると `ssh ragsys-app-002` のように接続できる(方法 B の ProxyCommand をベースにする)。
+EICE のトンネルは 22/3389 のみ許可されるため、WebUI ポート(案1=8000 / 案1b・案2・案3=80/443 / Locust=8089)へ直接トンネルはできない。EICE 経由で SSH ログインし、その中でローカルフォワードして運ぶ。インスタンスごとに `~/.ssh/config` へ登録すると `ssh ragsys-app-002` のように接続できる(方法 B の ProxyCommand をベースにする)。
 
 ```bash
 # 共通設定(ragsys-*)+ インスタンス別 Host を ~/.ssh/config へ追記(既存設定を消さないよう >> )
@@ -277,13 +285,17 @@ Host ragsys-app-002
 Host ragsys-app-003
     HostName ${app3_id}
     LocalForward 8443 localhost:443
+
+Host ragsys-perf-001
+    HostName ${perf_id}
+    LocalForward 8089 localhost:8089
 EOF
 ```
 
 ```bash
 # 各ノードへ接続(-N: シェルを開かずフォワードのみ保持)
 ssh -N ragsys-app-002    # 案2 の WebUI
-ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-001b(案1b)/ ssh -N ragsys-app-003(案3)/ ssh -N ragsys-llm-001(vLLM API)
+ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-001b(案1b)/ ssh -N ragsys-app-003(案3)/ ssh -N ragsys-llm-001(vLLM API)/ ssh -N ragsys-perf-001(Locust Web UI 8089)
 ```
 
 接続後、Host に対応する URL をブラウザで開く(llm-001 は WebUI ではなく vLLM API 用)。
@@ -295,6 +307,7 @@ ssh -N ragsys-app-001    # 案1 / ssh -N ragsys-app-001b(案1b)/ ssh -N ragsys-a
 | ragsys-app-001b | app-001b(案1b) | 8441 → :443 | https://localhost:8441 |
 | ragsys-app-002 | app-002(案2) | 8442 → :443 | https://localhost:8442 |
 | ragsys-app-003 | app-003(案3) | 8443 → :443 | https://localhost:8443 |
+| ragsys-perf-001 | perf-001(Locust) | 8089 → :8089 | http://localhost:8089 |
 
 > - WebUI ポートを SG で外部公開する必要はない(トラフィックは 22 番トンネル内を通る)。
 > - `~/.ssh/config` へ追記(`>>`)するため既存の他ホスト設定は保持される。再実行すると重複登録になるので、作り直すときは古い `ragsys-*` ブロックを削除してから実行する。
@@ -345,7 +358,7 @@ cat > stop-schedule.json <<EOF
   "Target": {
     "Arn": "arn:aws:scheduler:::aws-sdk:ec2:stopInstances",
     "RoleArn": "${scheduler_role_arn}",
-    "Input": "{\"InstanceIds\":[\"${llm_id}\",\"${app1_id}\",\"${app1b_id}\",\"${app2_id}\",\"${app3_id}\"]}"
+    "Input": "{\"InstanceIds\":[\"${llm_id}\",\"${app1_id}\",\"${app1b_id}\",\"${app2_id}\",\"${app3_id}\",\"${perf_id}\"]}"
   }
 }
 EOF
@@ -645,6 +658,6 @@ flowchart LR
 ## 付録: コスト注意
 
 - **NAT Gateway**: 稼働時間 + 処理データ課金。セットアップ専用なら §2.2 で削除する(EIP も解放)。The Internet 上の外部 IdP 用に常設する場合は月約 `$45.26`/730h + 処理料を継続計上する
-- **停止 ≠ 無料**: EC2 停止中も EBS は課金される(料金試算は [node-specs.md](../01-design/node-specs.md) §5〜6)
+- **停止 ≠ 無料**: EC2 停止中も EBS は課金される(料金試算は [node-specs.md](../01-design/node-specs.md) §6)
 - **AMI/スナップショット**: 世代を貯めると EBS スナップショット課金が積み上がる。不要世代は §5.3 で削除
 - インスタンスタイプの単価・月額は [node-specs.md](../01-design/node-specs.md) を参照

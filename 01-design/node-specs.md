@@ -10,6 +10,7 @@
 |---|---|---|---|
 | **Node A** | vLLM(推論専用) | **g6e.2xlarge**(最小: g6e.xlarge) | Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 24.04) |
 | **Node B** | WebUI / RAG API / ベクトル DB / TEI | 案毎に下表(例: 案2 は m7i.xlarge〜) | Ubuntu Server 24.04 LTS(Canonical 公式) |
+| **性能測定ノード** | Locust による負荷生成 | **t3.medium** | Ubuntu Server 24.04 LTS(Canonical 公式) |
 
 ---
 
@@ -51,7 +52,7 @@ GPU インスタンスの選定は、次の順で絞り込みます。
 
 - **g6e ファミリー(NVIDIA L40S 48GB/GPU、Ada Lovelace 世代)が「Ampere 以降 + 単一 GPU で 40GB+」を満たす最も経済的な選択肢**です。L40S は CUDA 12.8 対応です。同じ 1 GPU なら xlarge / 2xlarge / 4xlarge の VRAM は同じ 48GB で、差は vCPU / ホスト RAM のみ
 - g6e.xlarge(ホスト RAM 32GB)は、VRAM 40GB を使い切るサイズのモデルをロードする際にホスト RAM が窮屈になり得るため、**g6e.2xlarge を推奨**とします。まず xlarge で始めて、ロード時のメモリ不足やスワップが出たら 2xlarge に上げる進め方でも問題ありません
-- 月額の試算は §5 を参照。料金は変動するため、確定時に [EC2 オンデマンド料金表](https://aws.amazon.com/ec2/pricing/on-demand/) で対象リージョンの単価を確認してください。検証フェーズは停止(EBS のみ課金)をこまめに行うとコストを抑えられます
+- 月額の試算は §6 を参照。料金は変動するため、確定時に [EC2 オンデマンド料金表](https://aws.amazon.com/ec2/pricing/on-demand/) で対象リージョンの単価を確認してください。検証フェーズは停止(EBS のみ課金)をこまめに行うとコストを抑えられます
 
 ### 1.4 AMI
 
@@ -83,19 +84,27 @@ GPU インスタンスの選定は、次の順で絞り込みます。
 - **ARM(Graviton, m7g/r7g)は避けてください**。本構成のコンテナイメージ(TEI CPU 版等)は x86_64 前提で検証しているため
 - AMI は **Ubuntu Server 24.04 LTS(Canonical 公式、素の AMI)**。GPU がないので Deep Learning AMI は不要で、Docker は手順書 [デプロイ手順書](../03-deployment/README.md) §0.1 で導入します
 
-## 3. ストレージ(EBS)
+## 3. 性能測定ノード(perf-001)の選定
+
+Locust の負荷生成専用ノードには **t3.medium(2vCPU/4GB)** を採用します。負荷生成側は HTTP リクエストの送信と統計集計が中心で、Node A / Node B のようなモデル推論・検索インデックス保持を行わないため、CPU・メモリ要件は小さい構成です。ルート EBS は Ubuntu、Python 仮想環境、Locust、測定結果を収容する **gp3 30GB** とします。
+
+高い同時実行数で perf-001 自身の CPU 使用率が飽和し、RPS が対象システムではなく負荷生成側に制限される場合は、Locust の worker 分散またはインスタンスタイプの拡張を検討します。
+
+## 4. ストレージ(EBS)
 
 | ノード | 推奨 | サイジングの考え方 |
 |---|---|---|
 | Node A | **gp3 200GB〜** | モデル本体(HF 形式)+ HF キャッシュで実質モデルサイズの 2〜3 倍。40GB 級 VRAM を使うモデルなら 200GB が安全圏 |
 | Node B | **gp3 100GB〜**(案3 は 200GB〜) | TEI のモデルキャッシュ(数 GB)+ ベクトル/全文インデックス + 投入文書。案3 は OpenSearch のインデックスが支配的で、コーパス増に応じて拡張 |
+| 性能測定ノード | **gp3 30GB** | Ubuntu、Python 仮想環境、Locust、CSV 測定結果を収容 |
 
 gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシングが遅い場合のみ IOPS/スループットの引き上げを検討します。
 
-## 4. ネットワーク / セキュリティグループ
+## 5. ネットワーク / セキュリティグループ
 
-- 両ノードは**同一 VPC・同一 AZ**に配置する(ノード間はプライベート IP で通信。AZ を跨ぐとレイテンシと転送費用が発生)
+- Node A、Node B、性能測定ノードは**同一 VPC・同一 AZ**に配置する(ノード間はプライベート IP で通信。AZ を跨ぐとレイテンシと転送費用が発生)
 - 手順書の ufw の役割は **セキュリティグループ(SG)** で代替する:
+- 3 ノード役割には同じ SG を付与し、**同一 SG 内の通信を相互許可する自己参照ルール**を設定するため、perf-001 から Node B の 443/tcp へ到達できる
 
 | ルール | 送信元 | 宛先 | ポート |
 |---|---|---|---|
@@ -106,7 +115,7 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 - vLLM の `--api-key` は SG があっても設定する(多層防御。[02-provisioning/node-a/.env.example](../02-provisioning/node-a/.env.example) の `VLLM_API_KEY`)
 - Node B の docker-compose がデバッグ用に開けるポート(6333/8081/8082/9200 等)は `127.0.0.1` バインド済みのため、SG 側の許可は不要
 
-## 5. 料金目安(月額)
+## 6. 料金目安(月額)
 
 東京リージョン(ap-northeast-1)・Linux・**オンデマンド**単価(2026-07 時点、AWS Price List 由来)による試算。**1USD = 160JPY 換算**、常時稼働は 730h/月、日中帯のみ稼働は 160h/月 で計算。
 
@@ -114,6 +123,7 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 |---|---|---:|---:|---:|
 | **g6e.xlarge** | Node A(最小) | 2.699 | 約 315,200 | 約 69,100 |
 | **g6e.2xlarge** | Node A(推奨) | 3.252 | 約 379,800 | 約 83,200 |
+| t3.medium | 性能測定ノード | 0.0544 | 約 6,400 | 約 1,400 |
 | t3.large | Node B 案1/案1b(最小) | 0.1088 | 約 12,700 | 約 2,800 |
 | m7i.xlarge | Node B 案1/案1b 推奨 / 案2 最小 | 0.2604 | 約 30,400 | 約 6,700 |
 | m7i.2xlarge | Node B 案2(推奨) | 0.5208 | 約 60,800 | 約 13,300 |
@@ -150,7 +160,7 @@ gp3 は既定(3,000 IOPS)で十分です。OpenSearch のインデクシング�
 - 常時稼働が確定したら、1 年リザーブドインスタンス / Savings Plans で GPU は 3〜4 割安くなる(例: g6e.xlarge の 1 年 RI は約 1.70 USD/h)
 - 単価・為替は変動するため、稟議・予算化の際は [AWS 料金計算ツール](https://calculator.aws/) で最新値を再計算すること
 
-## 6. 参考情報
+## 7. 参考情報
 
 - [Amazon EC2 G6e インスタンス](https://aws.amazon.com/ec2/instance-types/g6e/)(L40S 48GB/GPU、最大 8 GPU)
 - [EC2 高速コンピューティングインスタンス仕様](https://docs.aws.amazon.com/ec2/la05-evaluation/instancetypes/ac.html)

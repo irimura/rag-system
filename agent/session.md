@@ -202,3 +202,10 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - **AWS CLI の注意点(再発防止)**: `describe-nat-gateways` はオプション名が **`--filter`(単数形)** で、他の `describe-*`(`--filters` 複数形)と異なる。また削除済み NAT が一定期間応答に残るため、**`Name=state,Values=available` での絞り込みが必須**
 - 検証済み: 削除ブロックが使う 8 変数すべてが再取得ブロックで充足、`nat_assoc_id` → `nat_rtb_id` の順序依存も正しい、再取得+削除を連結した `bash -n`、§2.3 経路A(NAT 常設)・§5.2 手順3 との整合、`git diff --check`
 - **未実施**: 実 AWS リソースでの再取得・削除の動作確認(コマンドは静的検証のみ)
+
+## 19. Locust 性能測定ノードと手順(2026-07-29)
+
+- 性能測定専用ノード `perf-001` を追加した。固定プライベート IP は `192.168.0.20`、Instance Type は `t3.medium`、ルート EBS は gp3 30GB、AMI は Node B と同じ Ubuntu 24.04
+- perf-001 は既存ワークロードサブネットと単一 SG に収容し、EICE 経由で管理する。Locust Web UI は `ragsys-perf-001` の SSH LocalForward 8089 で管理者端末へ転送する
+- Locust は Open WebUI の nginx 443 経由で測定し、ユーザー体感に近い応答時間を対象とする。案1(Chainlit)は対象外で、案1b / 案2 / 案3を測定する。同一 SG 内通信は許可済みのため SG 変更は不要
+- `07-performance/` に perf-001 セットアップ、Headless / Web UI の測定・判定・記録・クリーンアップ手順、`POST /api/chat/completions` 用 `locustfile.py` を集約した

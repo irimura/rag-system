@@ -54,12 +54,13 @@ flowchart LR
 
 ## 2. サーバ構成方針 — GPU ノードとアプリノードの分離
 
-vLLM の要求スペック(GPU VRAM 40GB 以上)を踏まえ、全案共通で **2 ノード構成**を基本とします。
+vLLM の要求スペック(GPU VRAM 40GB 以上)を踏まえ、通常利用は全案共通で **Node A + Node B の 2 ノード構成**を基本とし、性能試験時は性能測定用ノード(perf-001)を追加します。
 RDB を DB サーバに分離するのと同じ考え方で、高価な GPU ノードを推論専用に隔離し、データを持つコンポーネントを通常サーバ側に集約します。
 
 ```mermaid
 flowchart LR
     U(["ユーザー"])
+    PERF["Locust 実行ノード<br/>perf-001"]
 
     subgraph nodeB["Node B: アプリ+データノード(通常サーバ / RAM 16〜32GB 目安)"]
         UI["WebUI"]
@@ -78,6 +79,7 @@ flowchart LR
     end
 
     U --> UI
+    PERF -->|"負荷試験<br/>(HTTPS)"| UI
     API -->|"chat/completions<br/>(HTTP)"| VLLM
 ```
 
