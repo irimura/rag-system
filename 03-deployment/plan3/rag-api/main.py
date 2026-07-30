@@ -107,7 +107,7 @@ class RagState(TypedDict):
     question: str
     query: str
     docs: list[dict]
-    answer: str
+    route: str
     attempts: int
     previous_queries: list[str]
     groups: list[str]
@@ -148,30 +148,21 @@ def route_grade(state: RagState) -> str:
     return "no_answer"
 
 
-async def node_generate(state: RagState) -> dict:
-    context = "\n\n".join(
-        f"[{index + 1}] {hit['_source']['text']}" for index, hit in enumerate(state["docs"]))
-    res = await llm.ainvoke(PROMPT.format(context=context, question=state["question"]))
-    return {"answer": res.content}
-
-
-def node_no_answer(state: RagState) -> dict:
-    return {"answer": NO_ANSWER}
+def node_route(state: RagState) -> dict:
+    return {"route": route_grade(state)}
 
 
 def build_graph():
     graph_builder = StateGraph(RagState)
     graph_builder.add_node("rewrite", node_rewrite)
     graph_builder.add_node("retrieve", node_retrieve)
-    graph_builder.add_node("generate", node_generate)
-    graph_builder.add_node("no_answer", node_no_answer)
+    graph_builder.add_node("route", node_route)
     graph_builder.set_entry_point("rewrite")
     graph_builder.add_edge("rewrite", "retrieve")
+    graph_builder.add_edge("retrieve", "route")
     graph_builder.add_conditional_edges(
-        "retrieve", route_grade,
-        {"generate": "generate", "rewrite": "rewrite", "no_answer": "no_answer"})
-    graph_builder.add_edge("generate", END)
-    graph_builder.add_edge("no_answer", END)
+        "route", lambda state: state["route"],
+        {"generate": END, "rewrite": "rewrite", "no_answer": END})
     return graph_builder.compile()
 
 
@@ -193,6 +184,15 @@ class ChatRequest(BaseModel):
 def sources_footer(docs: list[dict]) -> str:
     sources = sorted({hit["_source"].get("source", "不明") for hit in docs})
     return "\n\n---\n参考資料: " + " / ".join(sources) if sources else ""
+
+
+def completion_chunk(chunk_id: str, created: int, content: str | None,
+                     finish: str | None = None) -> str:
+    delta = {"content": content} if content is not None else {}
+    body = {"id": chunk_id, "object": "chat.completion.chunk", "created": created,
+            "model": RAG_MODEL_NAME,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+    return f"data: {json.dumps(body, ensure_ascii=False)}\n\n"
 
 
 @app.get("/health")
@@ -221,26 +221,44 @@ async def chat_completions(
                             detail=f"インデックス '{INDEX}' がありません。先に ingest を実行してください。")
 
     result = await graph.ainvoke(
-        {"question": question, "query": "", "docs": [], "answer": "",
+        {"question": question, "query": "", "docs": [], "route": "",
          "attempts": 0, "previous_queries": [], "groups": principal.groups})
-    content = result["answer"] + (sources_footer(result["docs"]) if result["docs"] else "")
     response_id = f"chatcmpl-{uuid.uuid4().hex}"
     created = int(time.time())
 
-    if not req.stream:
-        return {"id": response_id, "object": "chat.completion", "created": created,
-                "model": RAG_MODEL_NAME,
-                "choices": [{"index": 0, "finish_reason": "stop",
-                             "message": {"role": "assistant", "content": content}}],
-                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
+    if result["route"] == "no_answer":
+        if not req.stream:
+            return _completion_response(response_id, created, NO_ANSWER)
 
-    async def pseudo_stream():
-        body = {"id": response_id, "object": "chat.completion.chunk", "created": created,
-                "model": RAG_MODEL_NAME,
-                "choices": [{"index": 0, "delta": {"content": content},
-                             "finish_reason": None}]}
-        yield f"data: {json.dumps(body, ensure_ascii=False)}\n\n"
-        body["choices"] = [{"index": 0, "delta": {}, "finish_reason": "stop"}]
-        yield f"data: {json.dumps(body, ensure_ascii=False)}\n\n"
+        async def no_answer_stream():
+            yield completion_chunk(response_id, created, NO_ANSWER)
+            yield completion_chunk(response_id, created, None, finish="stop")
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(no_answer_stream(), media_type="text/event-stream")
+
+    context = "\n\n".join(
+        f"[{index + 1}] {hit['_source']['text']}"
+        for index, hit in enumerate(result["docs"]))
+    prompt = PROMPT.format(context=context, question=question)
+    footer = sources_footer(result["docs"])
+
+    if not req.stream:
+        res = await llm.ainvoke(prompt)
+        return _completion_response(response_id, created, res.content + footer)
+
+    async def token_stream():
+        async for part in llm.astream(prompt):
+            if part.content:
+                yield completion_chunk(response_id, created, part.content)
+        yield completion_chunk(response_id, created, footer)
+        yield completion_chunk(response_id, created, None, finish="stop")
         yield "data: [DONE]\n\n"
-    return StreamingResponse(pseudo_stream(), media_type="text/event-stream")
+    return StreamingResponse(token_stream(), media_type="text/event-stream")
+
+
+def _completion_response(chunk_id: str, created: int, content: str) -> dict:
+    return {"id": chunk_id, "object": "chat.completion", "created": created,
+            "model": RAG_MODEL_NAME,
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": content}}],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}

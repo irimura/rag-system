@@ -2,8 +2,8 @@
 
 > コマンド中の `${...}` は環境に合わせて置換してください。
 
-- 目的: Open WebUI 経由で、ユーザー体感に近い非ストリーミング応答時間と失敗率を測定する
-- 特徴: perf-001 から nginx の HTTPS エンドポイントへ負荷を与え、Open WebUI と後段の RAG / vLLM を含む経路全体を測定する
+- 目的: Open WebUI 経由で、TTFT、TPOT(ITL)、Output token throughput、Request throughput の 4 指標を測定する
+- 特徴: perf-001 から nginx の HTTPS エンドポイントへストリーミング負荷を与え、Open WebUI と後段の RAG / vLLM を含む経路全体を測定する
 - 対象: 案1b、案2、案3。案1(Chainlit / app-001)は Open WebUI を使用しないため対象外
 
 ## 1. 前提条件
@@ -12,6 +12,7 @@
 - [ ] Open WebUI の初回管理者登録が完了済み
 - [ ] Open WebUI で API キーを発行済み
 - [ ] 案1bではナレッジコレクションを作成し、測定対象モデルへ紐付け済み
+- [ ] 案3は本改修後の rag-api イメージで再デプロイ済み
 - [ ] perf-001 セットアップ済み
 
 ## 2. 測定準備
@@ -70,9 +71,14 @@ locust -f locustfile.py --headless -u ${users} -r ${spawn_rate} -t ${duration} -
 
 ```text
 Type     Name                    # reqs  # fails |  Avg  Min  Max  Med | req/s failures/s
-POST     /api/chat/completions      120  0(0.00%) | 2450 1800 4100 2380 |  0.20       0.00
-Aggregated                         120  0(0.00%) | 2450 1800 4100 2380 |  0.20       0.00
+POST     /api/chat/completions      120  0(0.00%) | 8210 4500 14200 7900 |  0.20       0.00
+SSE      ttft                       120  0(0.00%) | 1450  900  2800 1380 |  0.20       0.00
+SSE      tpot                       120  0(0.00%) |   45   30    80   42 |  0.20       0.00
+SSE      tokens_per_s               120  0(0.00%) |   22   12    33   21 |  0.20       0.00
+Aggregated                         480  0(0.00%) | 2430  30 14200 1150 |  0.80       0.00
 ```
+
+`SSE tokens_per_s` 行の数値の単位は ms ではなく tokens/s です。
 
 ### 3.2 Web UI 実行
 
@@ -84,26 +90,33 @@ locust -f locustfile.py --host https://${app_ip}
 
 管理者端末で `ssh -N ragsys-perf-001` を実行し、SSH LocalForward 8089 経由で http://localhost:8089 を開きます。ユーザー数、起動率、実行時間を入力して開始します。
 
-`locustfile.py` の `wait_time` はユーザーの思考時間を模擬します。そのため RPS は概ね `users / (思考時間 + 応答時間)` で頭打ちになり、同時ユーザー数だけから一定の RPS を保証するものではありません。
+`locustfile.py` の `wait_time` はユーザーの思考時間を模擬します。そのため req/s は概ね `users / (思考時間 + 総応答時間)` で頭打ちになり、同時ユーザー数だけから一定の req/s を保証するものではありません。
 
 ## 4. 判定
 
-応答時間は `stream: false` で回答全体を受信し終えるまでの**非ストリーミング総所要時間**です。同じコーパス、モデル、Node B 構成、同時ユーザー数、実行時間で比較します。RPS は思考時間と回答長の影響を受けるため参考値として記録します。
+同じコーパス、モデル、Node B 構成、同時ユーザー数、実行時間で比較します。`SSE ttft`、`SSE tpot`、`SSE tokens_per_s` と、本体の `POST /api/chat/completions` を Locust の集計・CSV・Web UI で確認します。
 
-| 指標 | 初期目標 | 未達時の一次対応 |
+| 指標 | 初期目標・扱い | 未達時の一次対応 |
 |---|---|---|
-| p50 応答時間 | 5 秒以下 | Open WebUI、RAG、vLLM のログと区間別時間を確認する |
-| p95 応答時間 | 15 秒以下 | Node B / Node A の CPU、メモリ、GPU、キュー滞留を確認する |
+| TTFT p95 | 3 秒以下を目安 | 検索、リランク、Open WebUI、vLLM の区間別時間を確認する |
+| TPOT(ITL) p95 | 100 ms 以下を目安 | vLLM のキュー滞留、GPU 使用率、同時実行数を確認する |
+| Output token throughput(tokens/s) | 高いほど良い。構成間で比較する | モデル、量子化方式、生成長、同時実行数を確認する |
+| 総応答時間 p95 | 回答長を揃えて構成間で比較する | Node B / Node A の CPU、メモリ、GPU、キュー滞留を確認する |
 | 失敗率 | 1% 未満 | Locust の失敗内容と nginx / Open WebUI / RAG / vLLM のログを突合する |
+| Request throughput(req/s) | 参考値。Locust 標準値を使用する | 思考時間、総応答時間、同時ユーザー数を確認する |
+
+トークン数は SSE のコンテンツチャンク数による近似値です(案2・案3では末尾の参考資料 footer が 1 チャンク含まれるため +1 の誤差があります)。また、ここで測る TTFT には RAG の検索・リランク時間が含まれるため、vLLM 単体の TTFT とは異なります。
+
+任意のクロスチェックとして、`curl -s http://192.168.0.10:8080/metrics` の `vllm:` プレフィックスから、vLLM 単体の TTFT / TPOT ヒストグラムを参照できます。
 
 ## 5. 記録
 
 `07-performance/experiments.md`(なければヘッダごと作成)へ、1 測定につき 1 行を追記します。
 
 ```markdown
-| 日付 | 対象案 | モデル | users | duration | p50 | p95 | 失敗率 | メモ |
-|---|---|---|---:|---|---:|---:|---:|---|
-| ${date} | ${plan} | ${OWUI_MODEL} | ${users} | ${duration} | ${p50_ms} ms | ${p95_ms} ms | ${failure_rate} | ${notes} |
+| 日付 | 対象案 | モデル | users | duration | ttft_p95 | tpot_p95 | tokens_s | total_p95 | 失敗率 | req/s | メモ |
+|---|---|---|---:|---|---:|---:|---:|---:|---:|---:|---|
+| ${date} | ${plan} | ${OWUI_MODEL} | ${users} | ${duration} | ${ttft_p95_ms} ms | ${tpot_p95_ms} ms | ${tokens_s} | ${total_p95_ms} ms | ${failure_rate} | ${requests_s} | ${notes} |
 ```
 
 生成された `${result_prefix}_stats.csv` などの CSV も測定条件と対応付けて保管します。
@@ -122,8 +135,8 @@ locust -f locustfile.py --host https://${app_ip}
 
 | 案 | ホスト | `${app_ip}` | `${OWUI_MODEL}` | 備考 |
 |---|---|---|---|---|
-| 案1b | app-001b | `192.168.0.24` | vLLM のモデル名 | ナレッジコレクションのモデルへの紐付けが必須 |
-| 案2 | app-002 | `192.168.0.22` | `knowledge-rag` | RAG API を Open WebUI のモデルとして使用 |
-| 案3 | app-003 | `192.168.0.23` | `knowledge-rag` | RAG API を Open WebUI のモデルとして使用 |
+| 案1b | app-001b | `192.168.0.24` | vLLM のモデル名 | ナレッジコレクションの紐付け後、クライアント層でストリーミング測定可能 |
+| 案2 | app-002 | `192.168.0.22` | `knowledge-rag` | RAG API のトークンストリーミングを測定可能 |
+| 案3 | app-003 | `192.168.0.23` | `knowledge-rag` | 本改修後の RAG API でトークンストリーミングを測定可能 |
 
 案1(Chainlit / app-001)は Open WebUI を使用しないため、本性能試験の対象外です。

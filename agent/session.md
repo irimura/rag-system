@@ -211,6 +211,8 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - perf-001 は既存ワークロードサブネットと単一 SG に収容し、EICE 経由で管理する。Locust Web UI は `ragsys-perf-001` の SSH LocalForward 8089 で管理者端末へ転送する
 - Locust は Open WebUI の nginx 443 経由で測定し、ユーザー体感に近い応答時間を対象とする。案1(Chainlit)は対象外で、案1b / 案2 / 案3を測定する。同一 SG 内通信は許可済みのため SG 変更は不要
 - `07-performance/` に perf-001 セットアップ、Headless / Web UI の測定・判定・記録・クリーンアップ手順、`POST /api/chat/completions` 用 `locustfile.py` を集約した
+- 性能指標を TTFT / TPOT(ITL) / Output token throughput / Request throughput の 4 指標へ拡張し、Locust は Open WebUI の SSE を逐次読みしてコンテンツチャンク数をトークン数の近似として計測する
+- 案3 rag-api は LangGraph を検索・リトライ・ルート判定までに縮め、生成をエンドポイントへ移して `llm.astream()` による真のトークンストリーミングへ改修した
 
 ## 20. GPU 推論ノード増設(2026-07-30)
 

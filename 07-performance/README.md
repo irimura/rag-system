@@ -1,6 +1,6 @@
 # 性能測定
 
-Locust から nginx 経由で Open WebUI へ負荷を与え、ユーザー体感に近い応答時間、RPS、失敗率を測定します。
+Locust から nginx 経由で Open WebUI へストリーミング負荷を与え、TTFT、TPOT(ITL)、Output token throughput、Request throughput の 4 指標を測定します。
 
 > コマンド中の `${...}` は環境に合わせて置換してください。
 
@@ -9,7 +9,7 @@ Locust から nginx 経由で Open WebUI へ負荷を与え、ユーザー体感
 | パス | 内容 |
 |---|---|
 | [setup.md](setup.md) | perf-001 のセットアップ手順 |
-| [procedure.md](procedure.md) | 性能試験の準備、実行、判定、クリーンアップ手順 |
+| [procedure.md](procedure.md) | 4 指標による性能試験の準備、実行、判定、記録、クリーンアップ手順 |
 | [locustfile.py](locustfile.py) | Open WebUI 用 Locust シナリオ |
 
 ## 全体フロー
