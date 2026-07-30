@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 # 環境変数(接続先・秘密情報)— .env.example を元に各自作成する
 deploy/**/.env
 
