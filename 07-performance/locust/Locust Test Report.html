@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Locust Test Report — 注釈付きサンプル</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #18251f;
+      --muted: #637168;
+      --paper: #f4f6f1;
+      --card: #ffffff;
+      --line: #d9e0d8;
+      --green: #16835b;
+      --green-dark: #0b5a3c;
+      --green-soft: #e7f4ed;
+      --amber: #e38b16;
+      --amber-soft: #fff2dc;
+      --violet: #7353ba;
+      --red: #c83f49;
+      --blue: #177fc1;
+      --shadow: 0 18px 48px rgba(24, 37, 31, .10);
+      font-family: Inter, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; color: var(--ink); background: var(--paper); line-height: 1.7; }
+    button, a { font: inherit; }
+    a { color: var(--green-dark); }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 56px max(24px, calc((100vw - 1180px) / 2)) 48px;
+      color: #f8fff9;
+      background:
+        radial-gradient(circle at 88% 12%, rgba(121, 214, 165, .28), transparent 30%),
+        linear-gradient(128deg, #0b3d2b 0%, #146446 58%, #16835b 100%);
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      width: 390px; height: 390px;
+      right: -110px; bottom: -260px;
+      border: 1px solid rgba(255,255,255,.22);
+      border-radius: 50%;
+      box-shadow: 0 0 0 42px rgba(255,255,255,.045), 0 0 0 84px rgba(255,255,255,.03);
+    }
+    .eyebrow { margin: 0 0 10px; font-size: 12px; letter-spacing: .18em; text-transform: uppercase; opacity: .8; }
+    h1 { max-width: 800px; margin: 0; font-size: clamp(34px, 5vw, 62px); line-height: 1.08; letter-spacing: -.035em; }
+    .lead { max-width: 760px; margin: 20px 0 0; font-size: 17px; color: rgba(255,255,255,.82); }
+
+    .meta-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      max-width: 1180px;
+      margin: 28px auto 0;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(255,255,255,.15);
+    }
+    .meta-item { padding: 18px 20px; background: rgba(7,52,35,.56); }
+    .meta-label { display: flex; align-items: center; gap: 7px; font-size: 12px; color: rgba(255,255,255,.65); }
+    .meta-value { margin-top: 4px; font-size: 15px; font-weight: 700; }
+
+    .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 34px; max-width: 1240px; margin: 0 auto; padding: 40px 24px 80px; }
+    .toc { position: sticky; top: 20px; align-self: start; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.78); backdrop-filter: blur(14px); }
+    .toc strong { display: block; margin-bottom: 8px; font-size: 12px; letter-spacing: .12em; color: var(--muted); }
+    .toc a { display: block; padding: 7px 8px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 13px; }
+    .toc a:hover, .toc a:focus-visible { color: var(--green-dark); background: var(--green-soft); outline: none; }
+
+    main { min-width: 0; }
+    section { scroll-margin-top: 24px; margin-bottom: 28px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin: 0 0 14px; }
+    h2 { margin: 0; font-size: 25px; line-height: 1.25; letter-spacing: -.02em; }
+    .section-kicker { margin: 0; font-size: 12px; color: var(--muted); }
+    .card { border: 1px solid var(--line); border-radius: 18px; background: var(--card); box-shadow: 0 7px 26px rgba(24,37,31,.045); overflow: hidden; }
+    .card-body { padding: 22px; }
+
+    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .summary { position: relative; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+    .summary small { display: flex; align-items: center; gap: 7px; color: var(--muted); }
+    .summary b { display: block; margin-top: 8px; font-size: 27px; line-height: 1.1; }
+    .summary .unit { font-size: 13px; font-weight: 500; color: var(--muted); }
+    .summary.warning { border-color: #f1c474; background: var(--amber-soft); }
+
+    .notice { display: flex; gap: 12px; margin-top: 14px; padding: 16px 18px; border-left: 4px solid var(--amber); border-radius: 10px; background: var(--amber-soft); }
+    .notice strong { white-space: nowrap; }
+    .notice p { margin: 0; font-size: 14px; }
+
+    .concept-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .concept { padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+    .concept h3 { margin: 0 0 8px; font-size: 15px; }
+    .concept p { margin: 0; color: var(--muted); font-size: 13px; }
+    .formula { margin-top: 14px; padding: 18px; border-radius: 14px; color: #eafff1; background: #123e2d; }
+    .formula code { display: block; margin: 5px 0; color: #fff; font-size: 14px; }
+    .formula p { margin: 8px 0 0; color: rgba(255,255,255,.72); font-size: 12px; }
+    .reading-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+    .reading-step { padding: 14px; border-radius: 12px; background: var(--green-soft); font-size: 12px; }
+    .reading-step b { display: block; margin-bottom: 4px; color: var(--green-dark); }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+    th, td { padding: 12px 13px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+    th { position: relative; color: #4d5d53; background: #f8faf7; font-size: 11px; letter-spacing: .02em; }
+    th:first-child, th:nth-child(2), td:first-child, td:nth-child(2) { text-align: left; }
+    tbody tr[data-detail] { cursor: pointer; transition: background .15s ease; }
+    tbody tr[data-detail]:hover, tbody tr[data-detail]:focus-within { background: var(--green-soft); }
+    tbody tr:last-child td { border-bottom: 0; }
+    tr.aggregate { font-weight: 700; background: #f7f9f6; }
+    .method { display: inline-flex; min-width: 42px; justify-content: center; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+    .method.post { color: #075137; background: #dff1e7; }
+    .method.sse { color: #4d3485; background: #eee8fb; }
+    .zero { color: var(--green-dark); font-weight: 700; }
+
+    .help {
+      display: inline-grid;
+      place-items: center;
+      width: 18px; height: 18px;
+      margin-left: 4px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--green);
+      font-size: 11px;
+      font-weight: 800;
+      cursor: help;
+      vertical-align: middle;
+    }
+    .help:focus-visible { outline: 3px solid rgba(22,131,91,.25); outline-offset: 2px; }
+
+    #tooltip {
+      position: fixed;
+      z-index: 50;
+      max-width: min(330px, calc(100vw - 24px));
+      padding: 11px 13px;
+      border-radius: 10px;
+      color: #fff;
+      background: #17251f;
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      line-height: 1.55;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity .12s ease, transform .12s ease;
+    }
+    #tooltip.visible { opacity: 1; transform: translateY(0); }
+
+    .chart-frame { position: relative; padding: 16px; background: #fff; }
+    .chart-frame img { display: block; width: 100%; height: auto; border-radius: 10px; }
+    .callout {
+      position: absolute;
+      display: grid;
+      place-items: center;
+      width: 28px; height: 28px;
+      border: 3px solid #fff;
+      border-radius: 50%;
+      color: #fff;
+      background: var(--green-dark);
+      box-shadow: 0 5px 18px rgba(0,0,0,.24);
+      font-size: 12px;
+      font-weight: 800;
+      cursor: help;
+    }
+    .callout.c1 { top: 9%; left: 72%; }
+    .callout.c2 { top: 42%; left: 62%; background: var(--violet); }
+    .callout.c3 { top: 74%; left: 83%; background: var(--blue); }
+    .chart-notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 0 16px 16px; }
+    .chart-note { display: flex; gap: 9px; padding: 12px; border-radius: 11px; background: #f7f9f6; font-size: 12px; }
+    .chart-note b { flex: 0 0 auto; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: #fff; background: var(--green-dark); }
+    .chart-note:nth-child(2) b { background: var(--violet); }
+    .chart-note:nth-child(3) b { background: var(--blue); }
+
+    .empty-state { padding: 30px; text-align: center; color: var(--muted); }
+    .empty-state b { display: block; color: var(--green-dark); font-size: 20px; }
+    .ratio { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .ratio-card { padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+    .ratio-card h3 { margin: 0 0 12px; font-size: 15px; }
+    .bar { height: 12px; border-radius: 999px; background: #dde5de; overflow: hidden; }
+    .bar > span { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, var(--green), #4db884); }
+    .ratio-label { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+
+    .legend { padding: 18px 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; background: #fafbf9; }
+    footer { max-width: 1240px; margin: 0 auto; padding: 0 24px 50px; color: var(--muted); font-size: 12px; text-align: center; }
+
+    dialog { width: min(600px, calc(100vw - 32px)); padding: 0; border: 0; border-radius: 18px; color: var(--ink); box-shadow: 0 28px 90px rgba(0,0,0,.28); }
+    dialog::backdrop { background: rgba(9,28,20,.54); backdrop-filter: blur(3px); }
+    .dialog-head { display: flex; justify-content: space-between; gap: 16px; padding: 20px 22px; color: #fff; background: var(--green-dark); }
+    .dialog-head h3 { margin: 0; font-size: 18px; }
+    .dialog-close { width: 30px; height: 30px; border: 1px solid rgba(255,255,255,.5); border-radius: 50%; color: #fff; background: transparent; cursor: pointer; }
+    .dialog-body { padding: 22px; }
+    .dialog-body p { margin: 0 0 12px; }
+    .dialog-body p:last-child { margin-bottom: 0; }
+    .click-hint { color: var(--muted); font-size: 11px; }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .toc { position: static; display: flex; overflow-x: auto; gap: 4px; }
+      .toc strong { display: none; }
+      .toc a { flex: 0 0 auto; }
+      .summary-grid { grid-template-columns: 1fr 1fr; }
+      .concept-grid, .reading-steps { grid-template-columns: 1fr 1fr; }
+      .chart-notes { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 620px) {
+      .hero { padding-top: 38px; }
+      .meta-strip, .ratio { grid-template-columns: 1fr; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .concept-grid, .reading-steps { grid-template-columns: 1fr; }
+      .section-head { display: block; }
+      h1 { font-size: 37px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <p class="eyebrow">Performance / Locust / Annotated report</p>
+    <h1>Locust Test Report</h1>
+    <p class="lead">Open WebUI の負荷試験結果を題材に、Locust の各項目とグラフを、並列度を変えたときにも読み解けるよう注釈したガイドです。「?」にカーソルを合わせるか、表の行をクリックしてください。</p>
+
+    <div class="meta-strip" aria-label="試験条件">
+      <div class="meta-item">
+        <div class="meta-label">実行期間 <button class="help" data-tip="負荷試験が実際に走っていた開始・終了時刻です。ウォームアップやランプアップを含むかは実行条件と合わせて判断します。" aria-label="実行期間の説明">?</button></div>
+        <div class="meta-value">2026/8/3 10:39:43–10:45:28（5分45秒）</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Target Host <button class="help" data-tip="Locust がリクエストを送信した接続先です。この試験では app-001b の nginx / Open WebUI を HTTPS で測定しています。" aria-label="Target Hostの説明">?</button></div>
+        <div class="meta-value"><code>https://192.168.0.24</code></div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Script <button class="help" data-tip="負荷パターン、待ち時間、質問文、独自メトリクスの採取方法を定義した Locust シナリオです。" aria-label="Scriptの説明">?</button></div>
+        <div class="meta-value"><code>locustfile.py</code></div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Download Report <button class="help" data-tip="実行中のLocust Web UIが生成するレポート保存機能です。localhost:8089でLocustが動いている間だけ取得できるため、試験終了前に保存します。" aria-label="Download Reportの説明">?</button></div>
+        <div class="meta-value">HTML snapshot</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="ページ内目次">
+      <strong>REPORT GUIDE</strong>
+      <a href="#overview">読み方</a>
+      <a href="#concurrency">並列度との関係</a>
+      <a href="#requests">Request Statistics</a>
+      <a href="#percentiles">Response Time</a>
+      <a href="#failures">Failures</a>
+      <a href="#charts">Charts（グラフ）</a>
+      <a href="#ratio">Final ratio</a>
+    </nav>
+
+    <main>
+      <section id="overview">
+        <div class="section-head">
+          <div><p class="section-kicker">HOW TO READ</p><h2>まず分けて読む4つの観点</h2></div>
+        </div>
+        <div class="summary-grid">
+          <article class="summary"><small>負荷量 <button class="help" data-tip="Users、spawn rate、実行時間、wait_timeで『どの程度の負荷をかけたか』を確認します。# Requestsだけでは並列度は分かりません。" aria-label="負荷量の説明">?</button></small><b>Users <span class="unit">＋時間</span></b></article>
+          <article class="summary"><small>処理量 <button class="help" data-tip="実HTTP行のRPSを見ます。ユーザー数を増やしたとき、RPSが比例して伸びるか、頭打ちになるかを比較します。" aria-label="処理量の説明">?</button></small><b>RPS <span class="unit">requests/s</span></b></article>
+          <article class="summary"><small>待ち時間 <button class="help" data-tip="p50は典型値、p95は遅い側の体感です。並列度を増やしたときp95が急上昇すれば、キュー待ちや資源飽和を疑います。" aria-label="待ち時間の説明">?</button></small><b>p50 / p95</b></article>
+          <article class="summary warning"><small>信頼性 <button class="help" data-tip="失敗率とFailures/sを見ます。RPSが伸びても失敗が増えている場合、その負荷は持続可能な処理能力とは評価しません。" aria-label="信頼性の説明">?</button></small><b>Fail <span class="unit">rate</span></b></article>
+        </div>
+        <div class="notice">
+          <strong>大原則</strong>
+          <p>並列度比較では、同じモデル・質問集合・最大出力長・wait_time・実行時間を固定します。比較対象は <strong>POST行のRPS、p50、p95、失敗率</strong> と、独自SSE行のTTFT・TPOTです。異なる単位を合算するAggregated行は判定に使いません。</p>
+        </div>
+      </section>
+
+      <section id="concurrency">
+        <div class="section-head"><div><p class="section-kicker">CONCURRENCY MODEL</p><h2>並列度を変えたときの読み解き方</h2></div></div>
+        <div class="concept-grid">
+          <article class="concept"><h3>Users（並列度）</h3><p>Locustが同時に動かす仮想ユーザー数です。各ユーザーはこのシナリオでは「チャット1回 → 1〜3秒待機」を繰り返します。UsersはRPSそのものではありません。</p></article>
+          <article class="concept"><h3>Spawn rate（立ち上げ速度）</h3><p>1秒に何ユーザーずつ目標Usersまで増やすかです。定常性能は目標人数到達後の区間で読みます。立ち上げ中のグラフはウォームアップ／ランプアップとして分離します。</p></article>
+          <article class="concept"><h3>wait_time（思考時間）</h3><p>タスク完了後に各ユーザーが待つ時間です。現在は1〜3秒。応答が遅くなるほど各ユーザーの次の要求も遅れ、同じUsersでもRPSは下がります。</p></article>
+        </div>
+        <div class="formula">
+          <strong>このlocustfileの概算（1タスク = 実HTTP 1件）</strong>
+          <code>期待RPS ≈ Users ÷（平均POST応答秒 + 平均wait秒）</code>
+          <code>必要Users ≈ 目標RPS ×（平均POST応答秒 + 平均wait秒）</code>
+          <p>これはシステムが飽和する前の近似です。飽和後はキュー待ちで応答時間が増えるため、Usersを増やしてもRPSは比例せず、p95や失敗率だけが悪化します。</p>
+        </div>
+        <div class="reading-steps">
+          <div class="reading-step"><b>1. Usersを確認</b>グラフが目標並列度へ到達し、一定になった区間を選ぶ。</div>
+          <div class="reading-step"><b>2. POST RPSを確認</b>前の並列度からどれだけ処理量が伸びたかを見る。</div>
+          <div class="reading-step"><b>3. p50/p95を確認</b>典型値と遅い側がどれだけ悪化したかを見る。</div>
+          <div class="reading-step"><b>4. 失敗を確認</b>RPSの伸びが失敗増加と引き換えでないことを確認する。</div>
+        </div>
+      </section>
+
+      <section id="requests">
+        <div class="section-head">
+          <div><p class="section-kicker">VOLUME &amp; AVERAGES</p><h2>Request Statistics</h2></div>
+          <p class="click-hint">行をクリックすると、その測定行の意味を表示します</p>
+        </div>
+        <div class="card table-wrap">
+          <table>
+            <thead><tr>
+              <th>Type <button class="help" data-tip="Locust が分類に使うリクエスト種別です。POST は実HTTPリクエスト、SSE はストリームから算出した独自メトリクスです。" aria-label="Typeの説明">?</button></th>
+              <th>Name <button class="help" data-tip="リクエストのパス、または locustfile.py で登録した独自メトリクス名です。" aria-label="Nameの説明">?</button></th>
+              <th># Requests <button class="help" data-tip="テスト開始から終了までに完了して統計へ記録された件数です。『同時実行数』ではありません。実行時間が長いほど増え、同じ時間なら概ねRPS×秒数になります。SSE行はPOSTごとに派生登録されるため、実HTTP数はPOST行を見ます。" aria-label="Requestsの説明">?</button></th>
+              <th># Fails <button class="help" data-tip="失敗として記録された累積件数です。並列度比較では件数だけでなく #Fails ÷ #Requests の失敗率で比較します。タイムアウト、HTTPエラー、スクリプトのfailure判定が含まれます。" aria-label="Failsの説明">?</button></th>
+              <th>Average (ms) <button class="help" data-tip="全成功・失敗サンプルの応答時間合計÷サンプル数です。少数の極端な遅延に引っ張られるため、並列度比較ではp50/p95を主、平均を補助に使います。" aria-label="Averageの説明">?</button></th>
+              <th>Min (ms) <button class="help" data-tip="観測された最小値です。キャッシュ済み・キューなし等の最良ケースになりやすく、容量判定には使いません。環境の理論的な下限の参考です。" aria-label="Minの説明">?</button></th>
+              <th>Max (ms) <button class="help" data-tip="観測された最大値です。1件だけで変動するため、異常検出には使いますが合否基準にはp95/p99を優先します。独自SSE行ではresponse_time欄の流用により単位が異なる場合があります。" aria-label="Maxの説明">?</button></th>
+              <th>Avg size <button class="help" data-tip="平均レスポンスサイズです。このストリーミング計測ではレスポンス本文サイズをLocustへ渡していないため0です。通信量ゼロという意味ではありません。" aria-label="Average sizeの説明">?</button></th>
+              <th>RPS <button class="help" data-tip="テスト期間の平均記録数/秒です。実HTTP処理量はPOST行だけを見ます。概ね Users÷(応答時間+wait_time) ですが、飽和すると応答時間が伸びて頭打ちになります。SSE行のRPSは派生イベント数で、追加HTTP通信ではありません。" aria-label="RPSの説明">?</button></th>
+              <th>Failures/s <button class="help" data-tip="テスト期間の平均失敗数/秒です。累積#Failsだけでなく、グラフで特定の並列度・時間帯に集中していないか確認します。" aria-label="Failures per secondの説明">?</button></th>
+            </tr></thead>
+            <tbody>
+              <tr tabindex="0" data-title="POST /api/chat/completions" data-detail="Open WebUIへ送った実HTTPリクエストです。この行の#Requestsが実際のチャット回数、RPSが実処理量、応答時間がSSE完了までの総所要時間です。並列度比較の主行として使います。"><td><span class="method post">POST</span></td><td>/api/chat/completions</td><td>40</td><td class="zero">0</td><td>6,765.01</td><td>811</td><td>144,946</td><td>0</td><td>0.12</td><td>0</td></tr>
+              <tr tabindex="0" data-title="SSE tokens_per_s" data-detail="SSEコンテンツチャンク数÷総応答秒をLocustのresponse_time欄へ登録した独自指標です。厳密なトークン数ではなく、並列度を上げたときに1リクエスト当たりの生成速度が落ちる傾向を見るための相対値です。Average/percentile列の単位はmsではなくチャンク近似/sです。"><td><span class="method sse">SSE</span></td><td>tokens_per_s</td><td>40</td><td class="zero">0</td><td>38.99</td><td>1</td><td>43</td><td>0</td><td>0.12</td><td>0</td></tr>
+              <tr tabindex="0" data-title="SSE tpot" data-detail="最初の出力後、後続コンテンツチャンク1個あたりの平均間隔(ms)です。小さいほど継続生成が速い指標です。並列度増加でp95が悪化するなら、GPUスケジューリングや同時生成負荷の影響を疑います。"><td><span class="method sse">SSE</span></td><td>tpot</td><td>40</td><td class="zero">0</td><td>23.59</td><td>23</td><td>25</td><td>0</td><td>0.12</td><td>0</td></tr>
+              <tr tabindex="0" data-title="SSE ttft" data-detail="リクエスト開始から最初のコンテンツチャンクまでの時間(ms)です。検索、プロンプト構築、待ち行列、vLLM prefillを含みます。並列度増加でTTFTだけが急増しTPOTが安定なら、生成開始前の待ち行列増加と読みます。"><td><span class="method sse">SSE</span></td><td>ttft</td><td>40</td><td class="zero">0</td><td>3,626.85</td><td>114</td><td>140,143</td><td>0</td><td>0.12</td><td>0</td></tr>
+              <tr tabindex="0" class="aggregate" data-title="Aggregated" data-detail="すべての行を合算したLocustの集計です。POSTと派生SSEメトリクスは単位・意味が異なるため、Aggregatedの平均応答時間やRPSをシステム性能値として使わず、各行を個別に評価してください。"><td></td><td>Aggregated</td><td>160</td><td class="zero">0</td><td>2,613.61</td><td>1</td><td>144,946</td><td>0</td><td>0.46</td><td>0</td></tr>
+            </tbody>
+          </table>
+          <div class="legend">独自SSE指標はLocustの「response_time」欄を流用して記録しています。したがって <code>tokens_per_s</code> の数値単位は token近似/s、<code>tpot</code> と <code>ttft</code> は ms です。</div>
+        </div>
+      </section>
+
+      <section id="percentiles">
+        <div class="section-head">
+          <div><p class="section-kicker">DISTRIBUTION</p><h2>Response Time Statistics</h2></div>
+        </div>
+        <div class="card table-wrap">
+          <table>
+            <thead><tr>
+              <th>Method</th><th>Name</th>
+              <th>50%ile <button class="help" data-tip="中央値（p50）。半数のサンプルがこの値以下です。典型的な体感の比較に使います。平均と違い、少数の極端な遅延に引っ張られにくい値です。" aria-label="50 percentileの説明">?</button></th>
+              <th>60%ile <button class="help" data-tip="60%のサンプルがこの値以下です。p50からp90へ分布がどの程度なだらかに悪化するかを見る中間点です。" aria-label="60 percentileの説明">?</button></th>
+              <th>70%ile <button class="help" data-tip="70%のサンプルがこの値以下です。並列度ごとに同じパーセンタイルを比較します。" aria-label="70 percentileの説明">?</button></th>
+              <th>80%ile <button class="help" data-tip="80%のサンプルがこの値以下です。p50との差が広がるほど応答時間のばらつきが大きいことを示します。" aria-label="80 percentileの説明">?</button></th>
+              <th>90%ile <button class="help" data-tip="90%のサンプルがこの値以下です。遅い側10%の直前を示し、p95とともにテールレイテンシを読みます。" aria-label="90 percentileの説明">?</button></th>
+              <th>95%ile <button class="help" data-tip="95%のサンプルがこの値以下です。通常ユーザーの大多数が経験する遅さの上限としてSLO評価によく使います。" aria-label="95 percentileの説明">?</button></th>
+              <th>99%ile <button class="help" data-tip="99%のサンプルがこの値以下です。テールレイテンシの検出に有効ですが、今回のように40件では上位1件の影響が非常に大きくなります。" aria-label="99 percentileの説明">?</button></th>
+              <th>100%ile <button class="help" data-tip="最大値と同義です。最悪ケースを示しますが、再現性は別途確認します。" aria-label="100 percentileの説明">?</button></th>
+            </tr></thead>
+            <tbody>
+              <tr tabindex="0" data-title="POSTの分布" data-detail="実HTTPの総応答時間分布です。並列度ごとにp50とp95を比較し、p50は横ばいでもp95が急増する点をキュー発生の兆候として探します。p99はサンプル数が少ないと上位1件に支配されるため、十分な件数を確保します。"><td>POST</td><td>/api/chat/completions</td><td>1,600</td><td>2,000</td><td>4,300</td><td>6,500</td><td>9,400</td><td>12,000</td><td>145,000</td><td>145,000</td></tr>
+              <tr tabindex="0" data-title="tokens_per_sの分布" data-detail="各リクエストのチャンク近似/sを、Locustのパーセンタイル機能で分布化したものです。並列度を上げたときp50/p95が低下するかを相対比較します。ただし値が高いほど良い指標なので、通常の応答時間パーセンタイルとは良し悪しの向きが逆です。"><td>SSE</td><td>tokens_per_s</td><td>40</td><td>40</td><td>41</td><td>42</td><td>42</td><td>43</td><td>43</td><td>43</td></tr>
+              <tr tabindex="0" data-title="TPOTの分布" data-detail="出力開始後のチャンク間隔分布です。低いほど良好です。並列度増加時にTTFTだけでなくTPOTも悪化するなら、GPUの同時生成負荷が各ストリームの生成速度へ影響していると読みます。"><td>SSE</td><td>tpot</td><td>24</td><td>24</td><td>24</td><td>24</td><td>24</td><td>24</td><td>25</td><td>25</td></tr>
+              <tr tabindex="0" data-title="TTFTの分布" data-detail="回答開始前の待ち時間分布です。並列度を増やしたときp95が急上昇すれば、検索・リランク・vLLM待ち行列など開始前処理の混雑を示します。TPOTと分けて比較することで、待ちが開始前か生成中かを切り分けます。"><td>SSE</td><td>ttft</td><td>120</td><td>120</td><td>120</td><td>130</td><td>180</td><td>210</td><td>140,000</td><td>140,000</td></tr>
+              <tr tabindex="0" class="aggregate" data-title="Aggregatedの分布" data-detail="異なる単位・意味のPOSTとSSE指標を混ぜた分布です。全体件数の確認用途に留め、性能判定には個別行を使用します。"><td></td><td>Aggregated</td><td>110</td><td>120</td><td>130</td><td>1,300</td><td>2,100</td><td>7,000</td><td>140,000</td><td>145,000</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="failures">
+        <div class="section-head"><div><p class="section-kicker">ERRORS</p><h2>Failures Statistics</h2></div></div>
+        <div class="card table-wrap">
+          <table>
+            <thead><tr>
+              <th># Failures <button class="help" data-tip="同じMethod・Name・Messageでまとめられた失敗回数です。並列度比較では#Requestsで割った失敗率も併記します。" aria-label="Failure countの説明">?</button></th>
+              <th>Method <button class="help" data-tip="失敗した統計種別です。POSTなら実HTTP、SSEならlocustfileが登録した独自計測の失敗です。" aria-label="Failure methodの説明">?</button></th>
+              <th>Name <button class="help" data-tip="失敗したURL名または独自メトリクス名です。どの処理段階で失敗したかを切り分けます。" aria-label="Failure nameの説明">?</button></th>
+              <th>Message <button class="help" data-tip="HTTPステータス、タイムアウト、catch_responseで設定したfailure理由など、同一失敗をグループ化するメッセージです。" aria-label="Failure messageの説明">?</button></th>
+              <th>First Seen <button class="help" data-tip="その失敗が最初に観測された時刻です。Usersグラフと照合し、何並列付近で発生し始めたか確認します。" aria-label="First Seenの説明">?</button></th>
+              <th>Last Seen <button class="help" data-tip="その失敗が最後に観測された時刻です。負荷低下後も継続したか、一時的なスパイクだったかを判断します。" aria-label="Last Seenの説明">?</button></th>
+            </tr></thead>
+          </table>
+          <div class="empty-state"><b>失敗記録なし</b>このサンプルでは失敗行が生成されていません。</div>
+          <div class="legend">失敗率0%はLocustの判定上の成功です。回答品質、ログ内の警告、SLO達成は別に評価します。</div>
+        </div>
+      </section>
+
+      <section id="charts">
+        <div class="section-head"><div><p class="section-kicker">TIMELINE</p><h2>Charts（時系列グラフ）</h2></div></div>
+        <div class="card">
+          <div class="card-body">
+            <div class="notice" style="margin-top:0">
+              <strong>このシナリオ固有の注意</strong>
+              <p>Locust標準Chartsは全Type/Nameの<strong>Aggregated</strong>を描画します。現在の実装は、実POST 1件ごとに <code>ttft</code>・<code>tpot</code>・<code>tokens_per_s</code> の3イベントも登録するため、上段RPSは概ね「実HTTP RPSの4倍」です。中段もmsではない <code>tokens_per_s</code> を含むため、標準Response TimesグラフをPOSTレイテンシとして直接解釈できません。正確な比較には表／CSVのPOST・各SSE行を個別に使います。</p>
+            </div>
+            <div class="reading-steps">
+              <div class="reading-step"><b>ランプアップ</b>Usersが増加中。spawn rateの影響を見る区間で、定常性能の集計からは原則除外。</div>
+              <div class="reading-step"><b>定常区間</b>Usersが水平になった後。RPS・p50・p95が落ち着くまで待って比較する。</div>
+              <div class="reading-step"><b>飽和の兆候</b>Users増加に対してPOST RPSが頭打ち、p95が上昇、Failures/sが出始める。</div>
+              <div class="reading-step"><b>終了区間</b>Usersが0へ下がる部分。停止処理なので性能判定には含めない。</div>
+            </div>
+          </div>
+          <div class="chart-frame">
+            <img src="./image-20260803145313286.png" alt="RPS、応答時間、ユーザー数の時系列グラフ">
+            <button class="callout c1" data-tip="上段は直近のAggregated記録数/秒と失敗数/秒です。このlocustfileでは実POSTに3つの派生SSEイベントが加わるため、緑線は実HTTP RPSではありません。実HTTP処理量はRequest StatisticsのPOST行を使います。" aria-label="RPSグラフの注釈">1</button>
+            <button class="callout c2" data-tip="中段はAggregatedの直近約10秒におけるp50/p95です。POST、TTFT、TPOT、tokens/sが同じresponse_time統計に混在するため、このシナリオでは単一のレイテンシとして評価できません。" aria-label="応答時間グラフの注釈">2</button>
+            <button class="callout c3" data-tip="下段はその時点で動作中の仮想ユーザー数です。目標人数へ増える傾きはspawn rate、水平部分は定常並列度、最後の0はテスト終了を示します。" aria-label="ユーザー数グラフの注釈">3</button>
+          </div>
+          <div class="chart-notes">
+            <div class="chart-note"><b>1</b><span><strong>Total Requests per Second</strong><br>緑は全統計イベントの現在RPS、赤は現在Failures/s。標準シナリオならUsers増加に対する処理量を見るグラフですが、本実装では派生SSEイベント込みです。</span></div>
+            <div class="chart-note"><b>2</b><span><strong>Response Times</strong><br>全統計イベントを合算した直近約10秒のp50（橙）とp95（紫）。通常は紫の急上昇をキュー発生の兆候として読みますが、本実装では単位混在に注意します。</span></div>
+            <div class="chart-note"><b>3</b><span><strong>Number of Users</strong><br>現在の同時仮想ユーザー数。RPSと応答時間を同じ時刻で縦に見比べ、何並列から性能が崩れたかを判断します。</span></div>
+          </div>
+          <div class="legend"><strong>並列度比較の典型パターン:</strong> Users↑・POST RPS↑・p95ほぼ一定＝余力あり ／ Users↑・POST RPS頭打ち・TTFT p95↑＝待ち行列化 ／ Users↑・TPOT p95↑＝同時生成で1ストリーム当たり速度低下 ／ Failures/s↑＝容量限界またはタイムアウト到達。</div>
+        </div>
+      </section>
+
+      <section id="ratio">
+        <div class="section-head"><div><p class="section-kicker">TASK DISTRIBUTION</p><h2>Final ratio</h2></div></div>
+        <div class="ratio">
+          <article class="ratio-card">
+            <h3>Ratio Per Class <button class="help" data-tip="各HttpUserクラスが全実行に占めた割合です。複数のユーザー種別を定義したとき、負荷配分が意図どおりか確認します。" aria-label="Ratio Per Classの説明">?</button></h3>
+            <div class="bar"><span></span></div><div class="ratio-label"><span>OpenWebUiUser</span><strong>100.0%</strong></div>
+          </article>
+          <article class="ratio-card">
+            <h3>Total Ratio <button class="help" data-tip="全ユーザークラスを合算したタスク実行割合です。このシナリオにはchatCompletionだけがあるため100%です。" aria-label="Total Ratioの説明">?</button></h3>
+            <div class="bar"><span></span></div><div class="ratio-label"><span>chatCompletion</span><strong>100.0%</strong></div>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer>Source: Locust Test Report / 2026-08-03 · 数値は保存されたサンプルレポートをそのまま使用しています。仕様参照: <a href="https://docs.locust.io/en/stable/writing-a-locustfile.html">Locust: Writing a locustfile</a> / <a href="https://docs.locust.io/en/stable/_modules/locust/stats.html">Locust statistics implementation</a></footer>
+
+  <div id="tooltip" role="tooltip"></div>
+  <dialog id="detailDialog" aria-labelledby="dialogTitle">
+    <div class="dialog-head"><h3 id="dialogTitle">項目の説明</h3><button class="dialog-close" type="button" aria-label="閉じる">×</button></div>
+    <div class="dialog-body" id="dialogBody"></div>
+  </dialog>
+
+  <script>
+    const tooltip = document.getElementById('tooltip');
+    let activeTip = null;
+
+    function positionTooltip(target) {
+      const rect = target.getBoundingClientRect();
+      const tipRect = tooltip.getBoundingClientRect();
+      let left = rect.left + rect.width / 2 - tipRect.width / 2;
+      left = Math.max(12, Math.min(left, window.innerWidth - tipRect.width - 12));
+      let top = rect.top - tipRect.height - 10;
+      if (top < 12) top = rect.bottom + 10;
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+    }
+
+    function showTip(target) {
+      activeTip = target;
+      tooltip.textContent = target.dataset.tip;
+      tooltip.classList.add('visible');
+      positionTooltip(target);
+    }
+
+    function hideTip() {
+      activeTip = null;
+      tooltip.classList.remove('visible');
+    }
+
+    document.querySelectorAll('[data-tip]').forEach((el) => {
+      el.addEventListener('mouseenter', () => showTip(el));
+      el.addEventListener('mouseleave', hideTip);
+      el.addEventListener('focus', () => showTip(el));
+      el.addEventListener('blur', hideTip);
+    });
+    window.addEventListener('scroll', () => activeTip && positionTooltip(activeTip), { passive: true });
+    window.addEventListener('resize', () => activeTip && positionTooltip(activeTip));
+
+    const dialog = document.getElementById('detailDialog');
+    const dialogTitle = document.getElementById('dialogTitle');
+    const dialogBody = document.getElementById('dialogBody');
+
+    function openDetail(row) {
+      dialogTitle.textContent = row.dataset.title;
+      dialogBody.innerHTML = `<p>${row.dataset.detail}</p><p><strong>確認の基本:</strong> 平均だけで判断せず、p50・p95・最大値・時系列・同時刻のアプリケーションログを組み合わせて評価します。</p>`;
+      dialog.showModal();
+    }
+
+    document.querySelectorAll('tr[data-detail]').forEach((row) => {
+      row.addEventListener('click', () => openDetail(row));
+      row.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openDetail(row);
+        }
+      });
+    });
+    document.querySelector('.dialog-close').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (event) => {
+      const rect = dialog.getBoundingClientRect();
+      const outside = event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom;
+      if (outside) dialog.close();
+    });
+  </script>
+</body>
+</html>

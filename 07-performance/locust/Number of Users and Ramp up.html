@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Locust: Number of Users と Ramp up の理解</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17241e;
+      --muted: #657269;
+      --paper: #f3f6f1;
+      --card: #fff;
+      --line: #d8e0d8;
+      --green: #16835b;
+      --green-dark: #0b5a3c;
+      --green-soft: #e6f3ec;
+      --blue: #237fc1;
+      --blue-soft: #e7f2fa;
+      --amber: #d98917;
+      --amber-soft: #fff2dd;
+      --violet: #7554b8;
+      --red: #c5454e;
+      font-family: Inter, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; color: var(--ink); background: var(--paper); line-height: 1.75; }
+    button, input, select { font: inherit; }
+    a { color: var(--green-dark); }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    .hero {
+      padding: 58px max(24px, calc((100vw - 1120px) / 2)) 50px;
+      color: #f7fff9;
+      background: radial-gradient(circle at 86% 14%, rgba(122,218,170,.28), transparent 29%), linear-gradient(128deg, #0b3d2b, #146647 62%, #16835b);
+    }
+    .eyebrow { margin: 0 0 10px; font-size: 12px; letter-spacing: .17em; text-transform: uppercase; opacity: .75; }
+    h1 { max-width: 850px; margin: 0; font-size: clamp(34px, 5vw, 58px); line-height: 1.12; letter-spacing: -.035em; }
+    .lead { max-width: 780px; margin: 18px 0 0; color: rgba(255,255,255,.82); font-size: 17px; }
+
+    .layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 34px; max-width: 1200px; margin: 0 auto; padding: 40px 24px 76px; }
+    .toc { position: sticky; top: 18px; align-self: start; padding: 16px; border: 1px solid var(--line); border-radius: 15px; background: rgba(255,255,255,.82); backdrop-filter: blur(12px); }
+    .toc strong { display: block; margin: 0 0 8px 7px; color: var(--muted); font-size: 11px; letter-spacing: .12em; }
+    .toc a { display: block; padding: 7px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 13px; }
+    .toc a:hover, .toc a:focus-visible { color: var(--green-dark); background: var(--green-soft); outline: none; }
+    main { min-width: 0; }
+    section { margin-bottom: 34px; scroll-margin-top: 22px; }
+    .kicker { margin: 0; color: var(--muted); font-size: 11px; letter-spacing: .13em; }
+    h2 { margin: 2px 0 14px; font-size: 26px; line-height: 1.3; letter-spacing: -.02em; }
+    h3 { margin: 0 0 7px; font-size: 16px; }
+    p { margin: 0 0 12px; }
+    .card { border: 1px solid var(--line); border-radius: 17px; background: var(--card); box-shadow: 0 7px 24px rgba(23,36,30,.05); overflow: hidden; }
+    .card-body { padding: 22px; }
+    .grid-2, .grid-3, .grid-4 { display: grid; gap: 12px; }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .grid-4 { grid-template-columns: repeat(4, 1fr); }
+    .concept { padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: var(--card); }
+    .concept p { margin: 0; color: var(--muted); font-size: 13px; }
+    .number { display: inline-grid; place-items: center; width: 26px; height: 26px; margin-bottom: 10px; border-radius: 50%; color: #fff; background: var(--green); font-size: 12px; font-weight: 700; }
+    .formula { padding: 19px 21px; border-radius: 14px; color: #eafff1; background: #123e2d; }
+    .formula code { display: block; margin: 5px 0; color: #fff; font-size: 15px; }
+    .formula small { color: rgba(255,255,255,.7); }
+    .notice { padding: 16px 18px; border-left: 4px solid var(--amber); border-radius: 10px; background: var(--amber-soft); font-size: 14px; }
+    .notice strong { color: #7a4a08; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+    th, td { padding: 11px 13px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+    th { color: #4f5e54; background: #f8faf7; font-size: 11px; }
+    th:first-child, td:first-child { text-align: left; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .good { color: var(--green-dark); font-weight: 700; }
+    .warn { color: #9a5a00; font-weight: 700; }
+    .bad { color: var(--red); font-weight: 700; }
+
+    .controls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 20px; border-bottom: 1px solid var(--line); background: #f9fbf8; }
+    .control { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
+    .control output { color: var(--ink); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    input[type="range"] { width: 100%; accent-color: var(--green); }
+    .metrics { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 20px 0; }
+    .badge { padding: 5px 10px; border-radius: 999px; color: var(--green-dark); background: var(--green-soft); font-size: 12px; font-weight: 700; }
+    .timeline { padding: 12px 12px 0; overflow: hidden; }
+    .timeline svg { display: block; width: 100%; height: auto; }
+    .axis, .gridline { stroke: var(--line); stroke-width: 1; }
+    .label { fill: var(--muted); font-size: 11px; }
+    .main-label { fill: var(--ink); font-size: 12px; font-weight: 700; }
+    .request { fill: var(--green); opacity: .78; }
+    .wait { fill: var(--amber); opacity: .26; }
+    .users-line { fill: none; stroke: var(--blue); stroke-width: 2.5; }
+    .flight-line { fill: none; stroke: var(--green); stroke-width: 2.5; }
+    .ramp-zone { fill: var(--violet); opacity: .10; }
+    .legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 12px 20px 18px; color: var(--muted); font-size: 12px; }
+    .key { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 18px; height: 8px; border-radius: 2px; background: var(--green); }
+    .swatch.waiting { background: rgba(217,137,23,.28); }
+    .swatch.users { height: 3px; background: var(--blue); }
+    .swatch.ramp { background: rgba(117,84,184,.18); }
+    .reading { padding: 0 20px 20px; color: var(--muted); font-size: 13px; }
+
+    .pattern { padding: 17px; border-top: 3px solid var(--green); border-radius: 13px; background: var(--card); box-shadow: 0 5px 18px rgba(23,36,30,.05); }
+    .pattern:nth-child(2) { border-color: var(--amber); }
+    .pattern:nth-child(3) { border-color: var(--violet); }
+    .pattern:nth-child(4) { border-color: var(--red); }
+    .pattern p { margin: 0; color: var(--muted); font-size: 13px; }
+    .arrow { margin: 9px 0; color: var(--green-dark); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    footer { max-width: 1120px; margin: 0 auto; padding: 0 24px 48px; color: var(--muted); font-size: 12px; text-align: center; }
+
+    @media (max-width: 880px) {
+      .layout { grid-template-columns: 1fr; }
+      .toc { position: static; display: flex; overflow-x: auto; gap: 4px; }
+      .toc strong { display: none; }
+      .toc a { flex: 0 0 auto; }
+      .grid-4, .controls { grid-template-columns: repeat(2, 1fr); }
+      .grid-3 { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      .grid-2, .grid-4, .controls { grid-template-columns: 1fr; }
+      h1 { font-size: 36px; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <p class="eyebrow">Locust performance testing guide</p>
+    <h1>Number of Users と Ramp up の理解</h1>
+    <p class="lead">仮想ユーザーを何人動かし、どの速さで起動するか。レスポンス約10秒のチャットシステムを例に、負荷の立ち上がりと処理中ユーザー数を時間軸で理解します。</p>
+  </header>
+
+  <div class="layout">
+    <nav class="toc" aria-label="ページ内目次">
+      <strong>GUIDE</strong>
+      <a href="#definitions">基本用語</a>
+      <a href="#numbers">数値例</a>
+      <a href="#simulator">タイムチャート</a>
+      <a href="#wait-time">wait_time</a>
+      <a href="#in-flight">処理中ユーザー</a>
+      <a href="#patterns">典型パターン</a>
+      <a href="#planning">試験計画</a>
+    </nav>
+
+    <main>
+      <section id="definitions">
+        <p class="kicker">01 / DEFINITIONS</p>
+        <h2>まず、2つの役割を分ける</h2>
+        <div class="grid-2">
+          <article class="concept"><span class="number">U</span><h3>Number of Users</h3><p>Locustが同時に動作させる仮想ユーザーの目標数です。起動済みユーザーには、レスポンス待機中とwait_time中の両方が含まれます。RPSや同時処理数そのものではありません。</p></article>
+          <article class="concept"><span class="number">R</span><h3>Ramp up</h3><p>目標ユーザー数まで増やす速度（users started/second）です。最大人数ではなく、そこへ到達する過程を制御します。値が大きいほど一斉アクセスに近づきます。</p></article>
+        </div>
+        <div class="formula" style="margin-top:12px">
+          <strong>基本関係</strong>
+          <code>目標到達時間 ≈ Number of Users ÷ Ramp up</code>
+          <small>実際には最初のユーザーが直ちに起動するため、最後のユーザーの起動時刻は概ね (Users − 1) ÷ Ramp up です。</small>
+        </div>
+      </section>
+
+      <section id="numbers">
+        <p class="kicker">02 / NUMERIC EXAMPLES</p>
+        <h2>同じ100 Usersでも、立ち上がり方が違う</h2>
+        <div class="card table-wrap">
+          <table>
+            <thead><tr><th>Ramp up</th><th>起動間隔の目安</th><th>100 Users到達</th><th>負荷の性格</th></tr></thead>
+            <tbody>
+              <tr><td>0.5 user/s</td><td>約2秒に1人</td><td>約200秒</td><td>非常に緩やかな容量探索</td></tr>
+              <tr><td>1 user/s</td><td>約1秒に1人</td><td>約100秒</td><td>飽和点を追いやすい</td></tr>
+              <tr><td>5 users/s</td><td>約0.2秒に1人</td><td>約20秒</td><td>通常の段階負荷</td></tr>
+              <tr><td>10 users/s</td><td>約0.1秒に1人</td><td>約10秒</td><td>急な立ち上がり</td></tr>
+              <tr><td>100 users/s</td><td>ほぼ同時</td><td>約1秒</td><td>突発アクセス／スパイク</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="notice" style="margin-top:12px"><strong>最大許容人数を探す主役はUsersです。</strong> Ramp upを遅めにするのは、何Users付近からRPSが頭打ちになり、p95や失敗率が悪化するかを観察しやすくするためです。急増耐性を調べるときだけRamp upを速くします。</div>
+      </section>
+
+      <section id="simulator">
+        <p class="kicker">03 / INTERACTIVE TIMELINE</p>
+        <h2>起動状態を時間軸で確認する</h2>
+        <div class="card">
+          <div class="controls" aria-label="シミュレーション条件">
+            <label class="control">Number of Users <output id="usersOut">6</output><input id="usersInput" type="range" min="1" max="12" step="1" value="6"></label>
+            <label class="control">Ramp up <output id="rampOut">1 user/s</output><input id="rampInput" type="range" min="0.5" max="6" step="0.5" value="1"></label>
+            <label class="control">Response time <output id="responseOut">10 sec</output><input id="responseInput" type="range" min="2" max="20" step="1" value="10"></label>
+            <label class="control">wait_time <output id="waitOut">0 sec</output><input id="waitInput" type="range" min="0" max="10" step="1" value="0"></label>
+          </div>
+          <div class="metrics"><span class="badge" id="rampDuration">目標到達 約5.0秒</span><span class="badge" id="estimatedRps">飽和前の概算 0.60 RPS</span></div>
+          <div class="timeline"><svg id="timelineSvg" viewBox="0 0 920 560" role="img" aria-labelledby="chartTitle chartDesc"><title id="chartTitle">Locustユーザー起動タイムチャート</title><desc id="chartDesc">各ユーザーの起動、レスポンス待機、wait_time、起動済みユーザー数、処理中リクエスト数を表示します。</desc></svg></div>
+          <div class="legend"><span class="key"><span class="swatch"></span>レスポンス待機中</span><span class="key"><span class="swatch waiting"></span>wait_time</span><span class="key"><span class="swatch users"></span>起動済みUsers</span><span class="key"><span class="swatch ramp"></span>Ramp up区間</span></div>
+          <p class="reading" id="chartReading"></p>
+        </div>
+      </section>
+
+      <section id="wait-time">
+        <p class="kicker">04 / WAIT TIME</p>
+        <h2>Ramp upとwait_timeは別の時間軸</h2>
+        <div class="grid-3">
+          <article class="concept"><h3>Ramp up</h3><p>テスト開始時に新しい仮想ユーザーを追加する速度。目標人数へ到達すると役割を終えます。</p></article>
+          <article class="concept"><h3>Response time</h3><p>各ユーザーが質問を送り、回答を受信し終えるまでの時間。この間、そのユーザーは処理中です。</p></article>
+          <article class="concept"><h3>wait_time</h3><p>回答完了後、次の質問まで各ユーザーが待つ時間。起動済みの間、タスクごとに繰り返し適用されます。</p></article>
+        </div>
+        <div class="formula" style="margin-top:12px">
+          <strong>飽和前の概算（1タスク＝HTTP 1件）</strong>
+          <code>RPS ≈ Users ÷（平均Response time + 平均wait_time）</code>
+          <code>処理中の時間割合 ≈ Response time ÷（Response time + wait_time）</code>
+        </div>
+        <div class="card table-wrap" style="margin-top:12px">
+          <table>
+            <thead><tr><th>条件（10 Users）</th><th>平均Response</th><th>平均wait</th><th>概算RPS</th><th>処理中割合</th></tr></thead>
+            <tbody>
+              <tr><td>限界試験</td><td>10秒</td><td>0秒</td><td>約1.00</td><td>ほぼ100%</td></tr>
+              <tr><td>現在の簡易試験</td><td>10秒</td><td>2秒</td><td>約0.83</td><td>約83%</td></tr>
+              <tr><td>利用者思考時間あり</td><td>10秒</td><td>20秒</td><td>約0.33</td><td>約33%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="in-flight">
+        <p class="kicker">05 / IN-FLIGHT REQUESTS</p>
+        <h2>Number of Usersは「処理中ユーザー数」ではない</h2>
+        <p>Locust標準のNumber of Usersグラフは、起動している仮想ユーザー総数を表示します。レスポンス待機中とwait_time中を区別しません。</p>
+        <div class="grid-2">
+          <article class="concept"><h3>時間平均を推定する</h3><p><code>平均処理中リクエスト数 ≈ POST RPS × 平均応答秒</code><br>Littleの法則による概算です。POST行のRPSを使い、独自SSEイベント込みのAggregated RPSは使いません。</p></article>
+          <article class="concept"><h3>瞬間値を測定する</h3><p>リクエスト開始時にin-flightを+1、終了時に−1する独自ゲージが必要です。標準HTMLレポートには直接表示されないため、ログ、CSV、Prometheus等へ出力します。</p></article>
+        </div>
+        <div class="notice" style="margin-top:12px"><strong>wait_time=0の場合:</strong> 同期的に1ユーザー1リクエストを送る現在のシナリオでは、定常時のNumber of Usersと処理中ユーザー数はほぼ一致します。wait_timeがある場合は一致しません。</div>
+      </section>
+
+      <section id="patterns">
+        <p class="kicker">06 / BEHAVIOR PATTERNS</p>
+        <h2>並列度を増やしたときの典型パターン</h2>
+        <div class="grid-4">
+          <article class="pattern"><h3>余力あり</h3><div class="arrow">Users↑ → POST RPS↑</div><p>p50・p95がほぼ一定、失敗率0%。Users増加に処理量が比例します。</p></article>
+          <article class="pattern"><h3>待ち行列化</h3><div class="arrow">RPS横ばい → TTFT↑</div><p>Usersを増やしてもRPSが伸びず、回答開始前の待ちが増えます。</p></article>
+          <article class="pattern"><h3>生成速度低下</h3><div class="arrow">TPOT↑ → tokens/s↓</div><p>同時生成負荷により、個々のストリームの生成速度も低下します。</p></article>
+          <article class="pattern"><h3>容量超過</h3><div class="arrow">p95↑ → Failures/s↑</div><p>タイムアウトやHTTPエラーが増加。持続可能な許容範囲を超えています。</p></article>
+        </div>
+        <div class="card table-wrap" style="margin-top:12px">
+          <table>
+            <thead><tr><th>Users</th><th>POST RPS</th><th>p95</th><th>失敗率</th><th>読み方</th></tr></thead>
+            <tbody>
+              <tr><td>10</td><td>1.0</td><td>11秒</td><td>0%</td><td class="good">安定</td></tr>
+              <tr><td>20</td><td>1.9</td><td>12秒</td><td>0%</td><td class="good">ほぼ比例</td></tr>
+              <tr><td>30</td><td>2.5</td><td>18秒</td><td>0%</td><td class="warn">飽和開始</td></tr>
+              <tr><td>40</td><td>2.6</td><td>35秒</td><td>3%</td><td class="bad">許容不可</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="margin-top:8px;color:var(--muted);font-size:12px">上表は読み方を示す仮想例です。実際の合否は、事前に定めたp95・失敗率などのSLOで判断します。</p>
+      </section>
+
+      <section id="planning">
+        <p class="kicker">07 / TEST PLANNING</p>
+        <h2>目的別の設定例</h2>
+        <div class="card table-wrap">
+          <table>
+            <thead><tr><th>目的</th><th>Users</th><th>Ramp up</th><th>wait_time</th><th>主に見る項目</th></tr></thead>
+            <tbody>
+              <tr><td>単一ユーザー基準</td><td>1</td><td>1</td><td>実利用想定</td><td>TTFT・TPOT・総応答</td></tr>
+              <tr><td>最大許容人数の探索</td><td>段階的に増加</td><td>1〜2 users/s</td><td>固定</td><td>POST RPS・p95・失敗率</td></tr>
+              <tr><td>通常ピークの再現</td><td>想定ピーク</td><td>実際の流入相当</td><td>実際の思考時間</td><td>SLOを継続達成するか</td></tr>
+              <tr><td>限界性能</td><td>段階的に増加</td><td>遅め</td><td>0</td><td>最大持続RPS・飽和点</td></tr>
+              <tr><td>一斉アクセス耐性</td><td>想定ピーク</td><td>Usersと同程度</td><td>固定</td><td>開始直後の失敗・回復</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="notice" style="margin-top:12px"><strong>容量探索の推奨:</strong> 単純に0→100 Usersへ流すだけでなく、10 Usersを5分→20 Usersを5分→30 Usersを5分のように各段階を維持します。定常区間のPOST RPS・p50・p95・失敗率を比較すると、許容上限を判断しやすくなります。</div>
+      </section>
+    </main>
+  </div>
+
+  <footer>仕様参照: <a href="https://docs.locust.io/en/stable/writing-a-locustfile.html">Locust — Writing a locustfile</a> / 本リポジトリのシナリオ: <a href="../locustfile.py">locustfile.py</a></footer>
+
+  <script>
+    (() => {
+      const svg = document.getElementById('timelineSvg');
+      const controls = {
+        users: document.getElementById('usersInput'), ramp: document.getElementById('rampInput'),
+        response: document.getElementById('responseInput'), wait: document.getElementById('waitInput')
+      };
+      const outputs = {
+        users: document.getElementById('usersOut'), ramp: document.getElementById('rampOut'),
+        response: document.getElementById('responseOut'), wait: document.getElementById('waitOut')
+      };
+      const NS = 'http://www.w3.org/2000/svg';
+      function add(parent, name, attrs, text = '') {
+        const el = document.createElementNS(NS, name);
+        Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+        el.textContent = text; parent.appendChild(el); return el;
+      }
+      function render() {
+        const users = Number(controls.users.value), ramp = Number(controls.ramp.value);
+        const response = Number(controls.response.value), wait = Number(controls.wait.value);
+        const gap = 1 / ramp, rampEnd = (users - 1) * gap;
+        const horizon = Math.max(30, Math.ceil((rampEnd + response + wait + 8) / 5) * 5);
+        outputs.users.value = users;
+        outputs.ramp.value = `${ramp.toFixed(1).replace('.0','')} user/s`;
+        outputs.response.value = `${response} sec`; outputs.wait.value = `${wait} sec`;
+        document.getElementById('rampDuration').textContent = `目標到達 約${rampEnd.toFixed(1)}秒`;
+        document.getElementById('estimatedRps').textContent = `飽和前の概算 ${(users / (response + wait)).toFixed(2)} RPS`;
+        while (svg.lastChild && !['title','desc'].includes(svg.lastChild.tagName)) svg.removeChild(svg.lastChild);
+
+        const width = 920, left = 88, right = 22, top = 34, laneH = 24;
+        const chartTop = top + users * laneH + 54, chartH = 146, bottom = chartTop + chartH;
+        const x = (t) => left + t / horizon * (width - left - right);
+        const yCount = (v) => bottom - v / users * (chartH - 26);
+        svg.setAttribute('viewBox', `0 0 ${width} ${bottom + 38}`);
+        add(svg,'rect',{x:left,y:top-16,width:Math.max(1,x(rampEnd)-left),height:bottom-top+20,class:'ramp-zone'});
+        const tick = horizon <= 35 ? 5 : 10;
+        for (let t=0;t<=horizon;t+=tick) { add(svg,'line',{x1:x(t),x2:x(t),y1:top-16,y2:bottom,class:'gridline'}); add(svg,'text',{x:x(t),y:bottom+20,'text-anchor':'middle',class:'label'},`${t}s`); }
+        add(svg,'text',{x:left,y:16,class:'main-label'},'ユーザー別の状態');
+        for (let i=0;i<users;i++) {
+          const spawn=i*gap, y=top+i*laneH;
+          add(svg,'text',{x:left-9,y:y+13,'text-anchor':'end',class:'label'},`User ${i+1}`);
+          add(svg,'line',{x1:left,x2:x(horizon),y1:y+16,y2:y+16,class:'axis'});
+          for (let start=spawn;start<horizon;start+=response+wait) {
+            const end=Math.min(start+response,horizon);
+            add(svg,'rect',{x:x(start),y,width:Math.max(1,x(end)-x(start)),height:15,rx:3,class:'request'});
+            if (wait>0 && end<horizon) { const wEnd=Math.min(end+wait,horizon); add(svg,'rect',{x:x(end),y,width:Math.max(1,x(wEnd)-x(end)),height:15,rx:3,class:'wait'}); }
+          }
+        }
+        add(svg,'text',{x:left,y:chartTop-18,class:'main-label'},'起動済みUsers と処理中リクエスト数');
+        for (let v=0;v<=users;v+=Math.max(1,Math.ceil(users/4))) { add(svg,'line',{x1:left,x2:x(horizon),y1:yCount(v),y2:yCount(v),class:'gridline'}); add(svg,'text',{x:left-9,y:yCount(v)+4,'text-anchor':'end',class:'label'},String(v)); }
+        const usersPts=[], flightPts=[];
+        for (let t=0;t<=horizon+.001;t+=.1) {
+          let spawned=0, flight=0;
+          for (let i=0;i<users;i++) { const spawn=i*gap; if(t+1e-6<spawn) continue; spawned++; const phase=(t-spawn)%(response+wait||response); if(phase<response||wait===0) flight++; }
+          usersPts.push(`${x(t)},${yCount(spawned)}`); flightPts.push(`${x(t)},${yCount(flight)}`);
+        }
+        add(svg,'polyline',{points:usersPts.join(' '),class:'users-line'}); add(svg,'polyline',{points:flightPts.join(' '),class:'flight-line'});
+        const detail = wait===0 ? 'wait_timeが0なので、起動後の各ユーザーはほぼ常にレスポンス待機中です。2本の線はほぼ一致します。' : `処理${response}秒と待機${wait}秒を繰り返すため、各ユーザーが処理中となる時間割合は約${Math.round(response/(response+wait)*100)}%です。`;
+        document.getElementById('chartReading').textContent = `Ramp up ${ramp} user/sでは約${rampEnd.toFixed(1)}秒で${users} Usersへ到達します。${detail}`;
+      }
+      Object.values(controls).forEach((control) => control.addEventListener('input', render));
+      render();
+    })();
+  </script>
+</body>
+</html>
