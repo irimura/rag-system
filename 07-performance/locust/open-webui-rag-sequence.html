@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>案1b Open WebUI RAG シーケンス</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: light-dark(#f4f7f5, #111815);
+      --surface: light-dark(#ffffff, #19231f);
+      --surface-2: light-dark(#edf3ef, #22312b);
+      --ink: light-dark(#17231e, #edf6f1);
+      --muted: light-dark(#65736c, #a8b8b0);
+      --line: light-dark(#d6e0da, #35453e);
+      --green: light-dark(#087a53, #5ed4a5);
+      --green-soft: light-dark(#e3f3eb, #173c2e);
+      --blue: light-dark(#176fa8, #75c7fa);
+      --blue-soft: light-dark(#e6f2f9, #173247);
+      --amber: light-dark(#a86000, #f2b75e);
+      --amber-soft: light-dark(#fff0d6, #3b2b14);
+      --violet: light-dark(#6947a8, #ba9cec);
+      --violet-soft: light-dark(#eee8f8, #302540);
+      font-family: Inter, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; color: var(--ink); background: var(--bg); line-height: 1.7; }
+    code { padding: .1em .35em; border-radius: 5px; background: var(--surface-2); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    a { color: var(--green); }
+
+    .hero {
+      padding: 54px max(24px, calc((100vw - 1160px) / 2)) 46px;
+      color: #f2fff8;
+      background:
+        radial-gradient(circle at 82% 18%, rgba(96, 220, 165, .24), transparent 32%),
+        linear-gradient(130deg, #082f22, #0b5c40 62%, #087a53);
+    }
+    .eyebrow { margin: 0 0 9px; opacity: .72; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { max-width: 880px; margin: 0; font-size: clamp(32px, 5vw, 56px); line-height: 1.14; letter-spacing: -.035em; }
+    .lead { max-width: 850px; margin: 18px 0 0; color: rgba(255,255,255,.82); }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    .badge { padding: 5px 11px; border: 1px solid rgba(255,255,255,.24); border-radius: 999px; background: rgba(3,47,31,.34); font-size: 12px; }
+
+    .layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 32px; max-width: 1200px; margin: 0 auto; padding: 38px 24px 76px; }
+    nav { position: sticky; top: 18px; align-self: start; padding: 16px; border: 1px solid var(--line); border-radius: 15px; background: color-mix(in srgb, var(--surface) 90%, transparent); }
+    nav strong { display: block; margin: 0 0 8px; color: var(--muted); font-size: 11px; letter-spacing: .12em; }
+    nav a { display: block; padding: 7px 8px; border-radius: 8px; color: var(--ink); text-decoration: none; font-size: 13px; }
+    nav a:hover, nav a:focus-visible { color: var(--green); background: var(--green-soft); }
+    main { min-width: 0; }
+    section { margin-bottom: 30px; scroll-margin-top: 20px; }
+    h2 { margin: 0 0 14px; font-size: 25px; line-height: 1.35; letter-spacing: -.02em; }
+    h3 { margin: 0 0 8px; font-size: 17px; }
+    p { margin: 0 0 13px; }
+    .card { padding: 22px; border: 1px solid var(--line); border-radius: 17px; background: var(--surface); box-shadow: 0 8px 28px rgba(0,0,0,.04); }
+    .mermaid-wrap { overflow-x: auto; padding: 18px; border: 1px solid var(--line); border-radius: 17px; background: var(--surface); }
+    .mermaid { min-width: 900px; text-align: center; }
+    .legend { display: flex; flex-wrap: wrap; gap: 9px 16px; margin: 14px 2px 0; color: var(--muted); font-size: 12px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch { width: 11px; height: 11px; border-radius: 3px; }
+    .swatch.ui { background: var(--blue); }
+    .swatch.cpu { background: var(--amber); }
+    .swatch.gpu { background: var(--violet); }
+    .swatch.batch { border: 2px solid var(--green); background: transparent; }
+
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .phase { padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .phase small { display: block; margin-bottom: 5px; color: var(--muted); }
+    .phase p { margin: 0; color: var(--muted); font-size: 13px; }
+    .phase.pre { border-top: 4px solid var(--blue); }
+    .phase.search { border-top: 4px solid var(--amber); }
+    .phase.generate { border-top: 4px solid var(--violet); }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 11px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); background: var(--surface-2); font-size: 11px; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; white-space: nowrap; }
+    .pill.batch { color: var(--green); background: var(--green-soft); }
+    .pill.cpu { color: var(--amber); background: var(--amber-soft); }
+    .pill.gpu { color: var(--violet); background: var(--violet-soft); }
+    .pill.io { color: var(--blue); background: var(--blue-soft); }
+    .note { margin-top: 14px; padding: 15px 17px; border-left: 4px solid var(--amber); border-radius: 10px; background: var(--amber-soft); }
+    .note p:last-child { margin-bottom: 0; }
+    .log { overflow-x: auto; margin: 0; padding: 16px; border-radius: 13px; color: #eafff2; background: #14251e; font-size: 12px; line-height: 1.65; }
+    footer { padding: 0 24px 44px; color: var(--muted); text-align: center; font-size: 12px; }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { position: static; display: flex; overflow-x: auto; gap: 4px; }
+      nav strong { display: none; }
+      nav a { flex: 0 0 auto; }
+      .grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 600px) {
+      .hero { padding-top: 38px; }
+      .card { padding: 17px; }
+    }
+    @media print {
+      body { background: #fff; }
+      nav { display: none; }
+      .layout { display: block; max-width: none; padding: 20px; }
+      .card, .phase, .mermaid-wrap { break-inside: avoid; box-shadow: none; }
+      .hero { padding: 30px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <p class="eyebrow">Plan 1b / Open WebUI / Knowledge RAG</p>
+    <h1>プロンプト送信から回答表示までのRAGシーケンス</h1>
+    <p class="lead">Open WebUI v0.9.6、Chroma、BAAI/bge-m3、BAAI/bge-reranker-v2-m3、Node AのvLLMという案1b構成を対象に、補助生成・検索・Batch・最終生成・回答後処理を時系列で示します。</p>
+    <div class="badges">
+      <span class="badge">Node B: Open WebUI内蔵RAG</span>
+      <span class="badge">Node A: vLLM</span>
+      <span class="badge">Hybrid: BM25 + Vector + Rerank</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav aria-label="目次">
+      <strong>CONTENTS</strong>
+      <a href="#overview">1. 処理の区分</a>
+      <a href="#sequence">2. 全体シーケンス</a>
+      <a href="#parallel">3. 並列検索</a>
+      <a href="#stages">4. 計測ポイント</a>
+      <a href="#logs">5. Batchログ</a>
+      <a href="#notes">6. 解釈上の注意</a>
+    </nav>
+
+    <main>
+      <section id="overview">
+        <h2>1. 処理は3区間に分かれる</h2>
+        <div class="grid">
+          <article class="phase pre">
+            <small>PRE-RETRIEVAL</small>
+            <h3>受付・検索クエリ準備</h3>
+            <p>認証、モデル設定、Knowledge参照情報を解決し、設定に応じてvLLMで検索クエリを生成します。</p>
+          </article>
+          <article class="phase search">
+            <small>RETRIEVAL</small>
+            <h3>検索・統合・rerank</h3>
+            <p>Chroma全件取得、BM25、query embedding、vector検索、RRF統合、CrossEncoder rerankを行います。</p>
+          </article>
+          <article class="phase generate">
+            <small>GENERATION</small>
+            <h3>回答生成・表示</h3>
+            <p>取得チャンクをプロンプトへ挿入し、vLLMの生成結果をSSEで表示します。終了後に補助タスクが走る場合があります。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="sequence">
+        <h2>2. エンドツーエンド・シーケンス</h2>
+        <div class="mermaid-wrap">
+          <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor U as ブラウザ
+    participant N as NGINX<br/>Node B
+    participant O as Open WebUI<br/>Node B
+    participant C as Chroma<br/>Node B
+    participant E as bge-m3<br/>Node B CPU
+    participant R as bge-reranker<br/>Node B CPU
+    participant V as vLLM<br/>Node A GPU
+
+    U->>N: POST /api/chat/completions<br/>prompt・model・Knowledge
+    N->>O: リバースプロキシ
+    O->>O: 認証・モデル設定・Knowledge権限を解決
+
+    opt 検索クエリ生成が有効
+        O->>V: 補助生成リクエスト
+        V-->>O: 検索クエリ（1件以上）
+    end
+
+    par Knowledgeコレクションを事前取得
+        O->>C: collection.get()
+        C-->>O: 全チャンク・metadata
+    and 検索準備
+        O->>O: collection × query のタスクを作成
+    end
+
+    rect rgb(255, 244, 222)
+        Note over O,R: collection × query ごとに並列実行
+        par BM25経路
+            O->>O: 全チャンクからBM25を構築
+            O->>O: BM25検索（上位k件）
+        and Vector経路
+            O->>E: query embedding
+            Note over O,E: Batch: type=embedding
+            E-->>O: query vector
+            O->>C: vector similarity search
+            C-->>O: vector上位k件
+        end
+        O->>O: BM25 + VectorをRRF統合・重複排除
+        O->>R: query × candidate pairs
+        Note over O,R: Batch: type=rerank
+        R-->>O: relevance scores
+        O->>O: threshold・top_nで絞り込み
+    end
+
+    O->>O: 取得チャンクと引用情報をRAGプロンプトへ挿入
+    O->>V: 最終回答生成リクエスト（stream=true）
+    loop トークン生成
+        V-->>O: 生成チャンク
+        O-->>N: SSE delta.content
+        N-->>U: 回答を逐次表示
+    end
+    V-->>O: finish_reason / usage
+    O-->>U: 引用・完了イベント
+
+    opt 設定により回答後に非同期実行
+        O->>V: タイトル・タグ・フォローアップ生成
+        V-->>O: 補助生成結果
+        O->>O: 会話メタデータを更新
+    end
+          </pre>
+        </div>
+        <div class="legend" aria-label="凡例">
+          <span><i class="swatch ui"></i>HTTP・I/O</span>
+          <span><i class="swatch cpu"></i>Node B CPU検索</span>
+          <span><i class="swatch gpu"></i>Node A GPU生成</span>
+          <span><i class="swatch batch"></i>Sentence Transformers Batch</span>
+        </div>
+      </section>
+
+      <section id="parallel">
+        <h2>3. 複数のBatchesが見える理由</h2>
+        <div class="card">
+          <p>Open WebUI v0.9.6は、取得済みのKnowledgeコレクションと検索クエリを組み合わせ、<code>collection数 × query数</code> の検索タスクを作ります。各タスクがquery embeddingとrerankを呼ぶため、ログには複数のBatchが並行して現れます。</p>
+          <div class="mermaid-wrap" style="margin-top:14px">
+            <pre class="mermaid">
+flowchart LR
+    S["検索開始"] --> T1["Collection A × Query 1"]
+    S --> T2["Collection A × Query 2"]
+    S --> T3["Collection B × Query 1"]
+    S --> T4["Collection B × Query 2"]
+    T1 --> E1["Embedding Batch"] --> R1["Rerank Batch"]
+    T2 --> E2["Embedding Batch"] --> R2["Rerank Batch"]
+    T3 --> E3["Embedding Batch"] --> R3["Rerank Batch"]
+    T4 --> E4["Embedding Batch"] --> R4["Rerank Batch"]
+    R1 --> M["結果を統合"]
+    R2 --> M
+    R3 --> M
+    R4 --> M
+            </pre>
+          </div>
+          <div class="note">
+            <p><strong>例:</strong> 2 collection × 2 queryなら検索タスクは4件です。各タスクでembeddingとrerankが1回ずつ呼ばれる場合、最大8個のBatch呼び出しが混在します。</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="stages">
+        <h2>4. 性能計測で分離したいステージ</h2>
+        <div class="card table-wrap">
+          <table>
+            <thead>
+              <tr><th>順序</th><th>ステージ</th><th>主な資源</th><th>測定範囲</th><th>体感遅延への影響</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td><code>query_generation</code></td><td><span class="pill gpu">Node A GPU</span></td><td>補助リクエスト開始から検索クエリ受信</td><td>有効時はRAG検索開始前の待ち時間になる</td></tr>
+              <tr><td>2</td><td><code>collection_fetch</code></td><td><span class="pill io">Chroma I/O</span></td><td>全チャンク・metadataの取得</td><td>コーパス量とcollection数に依存</td></tr>
+              <tr><td>3</td><td><code>bm25_build_search</code></td><td><span class="pill cpu">Node B CPU</span></td><td>BM25構築から上位k件取得</td><td>全チャンクを対象に毎回構築するコスト</td></tr>
+              <tr><td>4</td><td><code>query_embedding</code></td><td><span class="pill batch">Embedding Batch</span></td><td>bge-m3のencode呼び出し</td><td>query数×collection数に応じて増える</td></tr>
+              <tr><td>5</td><td><code>vector_search</code></td><td><span class="pill io">Chroma I/O</span></td><td>query vectorから上位k件取得</td><td>index規模とストレージ性能に依存</td></tr>
+              <tr><td>6</td><td><code>rrf_merge</code></td><td><span class="pill cpu">Node B CPU</span></td><td>BM25・vector結果の統合と重複排除</td><td>候補件数が小さければ通常は軽い</td></tr>
+              <tr><td>7</td><td><code>rerank</code></td><td><span class="pill batch">Rerank Batch</span></td><td>CrossEncoderのpredict呼び出し</td><td>候補ペア数とCPU性能に依存</td></tr>
+              <tr><td>8</td><td><code>rag_prompt_build</code></td><td><span class="pill cpu">Node B CPU</span></td><td>チャンク・引用のプロンプト挿入</td><td>コンテキスト量が大きいと後段prefillにも影響</td></tr>
+              <tr><td>9</td><td><code>vllm_ttft</code></td><td><span class="pill gpu">Node A GPU</span></td><td>最終生成要求から最初の回答チャンク</td><td>モデル待ち、転送、prefillを含む</td></tr>
+              <tr><td>10</td><td><code>stream_total</code></td><td><span class="pill gpu">Node A GPU</span></td><td>最初の回答チャンクから生成完了</td><td>出力長とdecode速度に依存</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="logs">
+        <h2>5. Batch識別ログとの対応</h2>
+        <div class="card">
+          <pre class="log">RAG_BATCH_START id=emb-0123456789ab type=embedding items=1 batch_size=1 batches=1
+RAG_BATCH_END   id=emb-0123456789ab type=embedding status=success elapsed_ms=234.1
+
+RAG_BATCH_START id=rerank-abcdef012345 type=rerank items=9 batch_size=32 batches=1
+RAG_BATCH_END   id=rerank-abcdef012345 type=rerank status=success elapsed_ms=918.6</pre>
+          <p style="margin:14px 0 0">同じ<code>id</code>のSTARTとENDを対応付けます。<code>items</code>はモデルへ渡した入力数、<code>batches</code>は設定バッチサイズから算出した内部Batch予定数です。</p>
+        </div>
+      </section>
+
+      <section id="notes">
+        <h2>6. 解釈上の注意</h2>
+        <div class="card">
+          <ul>
+            <li>検索クエリ生成、タイトル、タグ、フォローアップは設定や会話状態により実行されない場合があります。</li>
+            <li>hybrid searchに失敗すると通常のvector searchへフォールバックするため、実ログではシーケンスが短くなる場合があります。</li>
+            <li>Sentence Transformersの<code>Batches</code>はNode Bのembedding／rerank進捗であり、vLLMのcontinuous batchingとは別物です。</li>
+            <li>回答後の補助生成は初回回答表示後に続くことがあり、ユーザー体感の回答時間とログ終端時刻が一致しない場合があります。</li>
+            <li>この図は案1bを対象とし、案2・案3の外部RAG API経路にはそのまま適用しません。</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer>対象構成: Open WebUI v0.9.6 / Chroma / BAAI bge-m3 / bge-reranker-v2-m3 / vLLM</footer>
+
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: dark ? "dark" : "neutral",
+      securityLevel: "strict",
+      sequence: { useMaxWidth: true, wrap: true, diagramMarginX: 24 },
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: "basis" }
+    });
+  </script>
+</body>
+</html>
