@@ -98,13 +98,23 @@ cd 03-deployment/plan1b
 # 1) Nginx の TLS 証明書を配置(検証用は自己署名。本番は社内 CA / Let's Encrypt)
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout nginx/certs/server.key -out nginx/certs/server.crt -subj "/CN=${node_b_hostname}"
 
-# 2) 起動
+# 2) カスタム Open WebUI のビルドと起動
+# Sentence Transformers の tqdm 表示を、処理種別・ID・所要時間付きログへ置き換える
 # 初回は Open WebUI と embedding/rerank モデルをダウンロードする
-docker compose up -d
+docker compose up -d --build
 
 # 3) 確認
 docker compose logs -f open-webui
 docker compose ps
+```
+
+質問時は、embedding と rerank の各呼び出しについて次の形式で開始・終了が記録されます。同じ `id` の行を対応付けることで、並列実行時も処理種別と所要時間を判別できます。Sentence Transformers の `Batches` プログレスバーは表示されません。
+
+```text
+RAG_BATCH_START id=emb-0123456789ab type=embedding items=1 batch_size=1 batches=1
+RAG_BATCH_END id=emb-0123456789ab type=embedding status=success elapsed_ms=234.1
+RAG_BATCH_START id=rerank-abcdef012345 type=rerank items=9 batch_size=32 batches=1
+RAG_BATCH_END id=rerank-abcdef012345 type=rerank status=success elapsed_ms=918.6
 ```
 
 ブラウザで `https://${node_b}/` を開き(自己署名の場合は警告を承認)、最初のアカウントを管理者として登録します。管理者設定の OpenAI API 接続で Node A の vLLM モデルが表示され、直接選択できることを確認します。
