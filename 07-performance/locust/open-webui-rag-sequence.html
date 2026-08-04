@@ -54,6 +54,10 @@
     h3 { margin: 0 0 8px; font-size: 17px; }
     p { margin: 0 0 13px; }
     .card { padding: 22px; border: 1px solid var(--line); border-radius: 17px; background: var(--surface); box-shadow: 0 8px 28px rgba(0,0,0,.04); }
+    .sequence-summary { margin: 0 0 14px; padding: 14px 16px; border-left: 4px solid var(--green); border-radius: 10px; background: var(--green-soft); }
+    .sequence-summary ol { margin: 0; padding-left: 1.5em; }
+    .sequence-summary ul { margin: 5px 0 7px; padding-left: 1.35em; }
+    .sequence-summary li { margin: 3px 0; }
     .mermaid-wrap { overflow-x: auto; padding: 18px; border: 1px solid var(--line); border-radius: 17px; background: var(--surface); }
     .mermaid { min-width: 900px; text-align: center; }
     .legend { display: flex; flex-wrap: wrap; gap: 9px 16px; margin: 14px 2px 0; color: var(--muted); font-size: 12px; }
@@ -154,6 +158,26 @@
 
       <section id="sequence">
         <h2>2. エンドツーエンド・シーケンス</h2>
+        <div class="sequence-summary">
+          <ol>
+            <li>ブラウザからNGINX経由でOpen WebUIへプロンプトを送信する。</li>
+            <li>必要に応じて、vLLMへの補助リクエストで検索クエリを生成する。</li>
+            <li>KnowledgeのコレクションをChromaから全件取得する。</li>
+            <li>collection × queryごとに次の検索処理を並列実行する。
+              <ul>
+                <li>BM25インデックスをメモリ上で構築して検索する。</li>
+                <li>bge-m3で検索クエリをembeddingする（Batch）。</li>
+                <li>Chromaでvector検索する。</li>
+                <li>BM25とvector検索の結果を統合する。</li>
+                <li>bge-reranker-v2-m3でrerankする（Batch）。</li>
+              </ul>
+            </li>
+            <li>取得チャンクをRAGプロンプトへ挿入する。</li>
+            <li>vLLMへ最終回答生成リクエストを送信する。</li>
+            <li>生成された回答をストリーミング表示する。</li>
+            <li>設定に応じて、タイトル・タグ・フォローアップを生成する。</li>
+          </ol>
+        </div>
         <div class="mermaid-wrap">
           <pre class="mermaid">
 sequenceDiagram
@@ -279,6 +303,12 @@ flowchart LR
       <section id="logs">
         <h2>5. Batch識別ログとの対応</h2>
         <div class="card">
+          <h3>変更前: tqdmのプログレスバー</h3>
+          <pre class="log">Batches: 100%|██████████| 1/1 [00:00&lt;00:00, 2.31it/s]
+Batches: 100%|██████████| 1/1 [00:01&lt;00:00, 1.27s/it]</pre>
+          <p style="margin:14px 0 22px">個々のBatch所要時間は読み取れますが、embeddingとrerankのどちらか、どの並列検索に属するか、開始と終了の対応関係は判別できません。</p>
+
+          <h3>変更後: 種別・ID・所要時間付きログ</h3>
           <pre class="log">RAG_BATCH_START id=emb-0123456789ab type=embedding items=1 batch_size=1 batches=1
 RAG_BATCH_END   id=emb-0123456789ab type=embedding status=success elapsed_ms=234.1
 
