@@ -391,7 +391,7 @@
             </div>
           </div>
           <div class="chart-frame">
-            <img src="./image-20260803145313286.png" alt="RPS、応答時間、ユーザー数の時系列グラフ">
+            <img src="./locust-test-report.png" alt="RPS、応答時間、ユーザー数の時系列グラフ">
             <button class="callout c1" data-tip="上段は直近のAggregated記録数/秒と失敗数/秒です。このlocustfileでは実POSTに3つの派生SSEイベントが加わるため、緑線は実HTTP RPSではありません。実HTTP処理量はRequest StatisticsのPOST行を使います。" aria-label="RPSグラフの注釈">1</button>
             <button class="callout c2" data-tip="中段はAggregatedの直近約10秒におけるp50/p95です。POST、TTFT、TPOT、tokens/sが同じresponse_time統計に混在するため、このシナリオでは単一のレイテンシとして評価できません。" aria-label="応答時間グラフの注釈">2</button>
             <button class="callout c3" data-tip="下段はその時点で動作中の仮想ユーザー数です。目標人数へ増える傾きはspawn rate、水平部分は定常並列度、最後の0はテスト終了を示します。" aria-label="ユーザー数グラフの注釈">3</button>

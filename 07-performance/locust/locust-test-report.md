@@ -34,7 +34,7 @@
 
 ## Charts
 
-![image-20260803145313286](./image-20260803145313286.png)
+![Locust テスト結果の時系列グラフ](./locust-test-report.png)
 
 
 ## Final ratio
