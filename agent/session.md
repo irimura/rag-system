@@ -229,3 +229,11 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - `show_progress_bar=False` は内部 embedding と内部 CrossEncoder rerank の両方に指定する。RAG の検索結果・並列処理・モデル設定は変更しない
 - 公式イメージ内の対象コードが想定と異なる場合はビルドを失敗させ、別バージョンへ誤適用しない。ベースイメージは既存決定どおり v0.9.6 固定
 - 公式 v0.9.6 ソースへのパッチ適用、Python 構文、`docker compose config` は検証済み。Docker daemon が起動していないため、実コンテナ build / 起動 / 実質問ログは未確認
+
+## 22. 案1b Keycloak OIDC 検証経路(2026-08-05)
+
+- 案1b の OIDC 検証は、正典の SSH LocalForward 8441 から Nginx へ入る `https://localhost:8441` を標準経路とする。Open WebUI の loopback 3000 はデバッグ用の代替経路として維持する
+- Keycloak client の redirect URI は標準経路 `https://localhost:8441/oauth/oidc/callback` とデバッグ経路 `http://localhost:3000/oauth/oidc/callback` を登録する。Open WebUI には `OPENID_REDIRECT_URI` を明示してブラウザの入口と完全一致させる
+- issuer は `http://keycloak:8080/realms/rag` に固定し、利用端末の hosts と 8080 → Node B 8180 の LocalForward によりブラウザと Docker network 内の見え方を一致させる
+- `.env` の Keycloak 管理者変数は `KEYCLOAK_ADMIN_USERNAME` / `KEYCLOAK_ADMIN_PASSWORD`。compose がコンテナ内の `KC_BOOTSTRAP_ADMIN_USERNAME` / `KC_BOOTSTRAP_ADMIN_PASSWORD` へ写像する
+- `03-deployment/keycloak/README.md` を案1bだけで設定から alice/carol/eva のグループ同期確認まで完遂できる手順書とし、`03-deployment/README.md` §3.2 は概要と参照だけに整理した

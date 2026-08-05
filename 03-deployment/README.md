@@ -255,22 +255,11 @@ curl --cacert rag-api/certs/root-ca.pem --resolve node-0.example.com:9200:127.0.
 
 既定はローカル認証だけで完結します。外部 IdP の開通と §3.3 のバックチャネル経路整備が完了する前に、OIDC フロー全体を先行検証するときだけ profile `idp` を起動します。本番の外部 IdP 利用時は起動しません。
 
-```bash
-cd 03-deployment/plan${n}
-docker compose --profile idp up -d keycloak
-```
+案1b のクライアント設定、Keycloak/Open WebUI の起動・設定、検証ユーザー、グループ同期の確認、トラブルシュートは [検証用 Keycloak OIDC 動作検証手順](keycloak/README.md) を参照してください。同手順の標準経路は Nginx へ接続する `https://localhost:8441` で、`http://localhost:3000` はデバッグ用の代替経路です。
 
-利用端末の hosts に `127.0.0.1 keycloak` を登録し、SSH LocalForward でローカル 8080 を Node B の 8180 へ転送します。
+案2/3 から同じ realm import を利用する場合は、各案でブラウザから見える HTTPS URL と一致する redirect URI を Keycloak client へ追加します。案3の PostgreSQL initdb script は空の `pg-data` を初期化する初回だけ keycloak_app role/DB を作成するため、既存 volume には同等の SQL を別途適用します。
 
-```bash
-ssh -N -L 8080:127.0.0.1:8180 ragsys-app-00${n}
-```
-
-`.env` の OIDC ブロックを有効化し、`OPENID_PROVIDER_URL=http://keycloak:8080/realms/rag/.well-known/openid-configuration`、client ID `open-webui`、検証用固定 secret を設定して Open WebUI を再作成します。alice/bob/carol/eva でログインし、issuer と `groups` claim の同期を確認します。
-
-案1b・案2・案3の HTTPS 公開名で検証する場合は、Keycloak 起動前に `03-deployment/keycloak/realm-rag.json` の `redirectUris` へ `https://${node_b_hostname}/oauth/oidc/callback` を明示追加します。Keycloak はホスト位置の wildcard をサポートしません。
-
-案3の PostgreSQL initdb script は空の `pg-data` を初期化する初回だけ keycloak_app role/DB を作成します。既存 volume には同等の SQL を別途適用します。本番は issuer/client/secret/redirect URI を組織 IdP と安定した HTTPS 名へ差し替え、検証用の secret、ユーザー、初期パスワードは移行しません。
+本番移行時は issuer/discovery URL、client ID、client secret、redirect URI、group claim の写像を組織 IdP と安定した HTTPS 名へ差し替え、検証用の secret、ユーザー、初期パスワードは移行しません。
 
 ## 3.3 外部 IdP へ接続する場合
 
