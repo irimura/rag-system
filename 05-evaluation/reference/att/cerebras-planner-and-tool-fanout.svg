@@ -1,0 +1,46 @@
+<svg viewBox="0 0 900 460" role="img" aria-labelledby="fig-007-title">
+  <title id="fig-007-title">プランナー、ツールの並列実行、根拠の正規化、合成</title>
+  <defs>
+    <marker id="arrow-007" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0 0 10 5 0 10Z" fill="currentColor" />
+    </marker>
+  </defs>
+  <g>
+    <rect x="58" y="188" width="142" height="64" fill="#fff" />
+    <rect x="274" y="188" width="142" height="64" fill="none" stroke="currentColor" />
+    <rect x="492" y="48" width="150" height="52" fill="#fff" />
+    <rect x="492" y="122" width="150" height="52" fill="#fff" />
+    <rect x="492" y="196" width="150" height="52" fill="#fff" />
+    <rect x="492" y="270" width="150" height="52" fill="#fff" />
+    <rect x="492" y="344" width="150" height="52" fill="#fff" />
+    <rect x="704" y="142" width="148" height="64" fill="none" stroke="currentColor" />
+    <rect x="704" y="264" width="148" height="64" fill="none" stroke="currentColor" />
+    <path marker-end="url(#arrow-007)" d="M200 220H266" />
+    <path marker-end="url(#arrow-007)" d="M416 220H458V74H484" />
+    <path marker-end="url(#arrow-007)" d="M416 220H458V148H484" />
+    <path marker-end="url(#arrow-007)" d="M416 220H484" />
+    <path marker-end="url(#arrow-007)" d="M416 220H458V296H484" />
+    <path marker-end="url(#arrow-007)" d="M416 220H458V370H484" />
+    <path marker-end="url(#arrow-007)" d="M642 74H674V174H696" />
+    <path marker-end="url(#arrow-007)" d="M642 148H696" />
+    <path marker-end="url(#arrow-007)" d="M642 222H674V174H696" />
+    <path marker-end="url(#arrow-007)" d="M642 296H674V296H696" />
+    <path marker-end="url(#arrow-007)" d="M642 370H674V296H696" />
+    <path marker-end="url(#arrow-007)" d="M778 206V256" />
+  </g>
+  <g text-anchor="middle" dominant-baseline="middle">
+    <text x="129" y="220">質問</text>
+    <text x="345" y="220">プランナー</text>
+    <text x="567" y="74">検索</text>
+    <text x="567" y="148">Slack検索</text>
+    <text x="567" y="222">コード検索</text>
+    <text x="567" y="296">最近のPR</text>
+    <text x="567" y="370">有識者検索</text>
+    <text x="778" y="166">根拠</text>
+    <text x="778" y="288">合成</text>
+  </g>
+  <g text-anchor="middle" dominant-baseline="middle">
+    <text x="778" y="190">正規化済み行</text>
+    <text x="778" y="312">回答 + 引用</text>
+  </g>
+</svg>

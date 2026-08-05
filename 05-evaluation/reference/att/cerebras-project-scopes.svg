@@ -1,0 +1,36 @@
+<svg viewBox="0 0 760 420" role="img" aria-labelledby="fig-010-title">
+  <title id="fig-010-title">プロジェクトは共有データソースを複製せずに参照</title>
+  <defs>
+    <marker id="arrow-010" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0 0 10 5 0 10Z" fill="currentColor" />
+    </marker>
+  </defs>
+  <g>
+    <rect x="56" y="76" width="214" height="86" fill="none" stroke="currentColor" />
+    <rect x="56" y="258" width="214" height="86" fill="none" stroke="currentColor" />
+    <rect x="476" y="36" width="214" height="54" fill="#fff" />
+    <rect x="476" y="112" width="214" height="54" fill="#fff" />
+    <rect x="476" y="188" width="214" height="54" fill="#fff" />
+    <rect x="476" y="264" width="214" height="54" fill="#fff" />
+    <rect x="476" y="340" width="214" height="54" fill="#fff" />
+    <path marker-end="url(#arrow-010)" d="M270 108H404V63H468" />
+    <path marker-end="url(#arrow-010)" d="M270 120H404V139H468" />
+    <path marker-end="url(#arrow-010)" d="M270 132H404V215H468" />
+    <path marker-end="url(#arrow-010)" d="M270 290H404V215H468" />
+    <path marker-end="url(#arrow-010)" d="M270 302H404V291H468" />
+    <path marker-end="url(#arrow-010)" d="M270 314H404V367H468" />
+  </g>
+  <g text-anchor="middle" dominant-baseline="middle">
+    <text x="163" y="108">コンパイラープロジェクト</text>
+    <text x="163" y="290">プラットフォームプロジェクト</text>
+    <text x="583" y="63">コンパイラーSlack</text>
+    <text x="583" y="139">モノリスリポジトリ</text>
+    <text x="583" y="215">共有インシデント</text>
+    <text x="583" y="291">プラットフォームリポジトリ</text>
+    <text x="583" y="367">クラウドRunbook</text>
+  </g>
+  <g text-anchor="middle" dominant-baseline="middle">
+    <text x="163" y="132">既定のクエリ範囲</text>
+    <text x="163" y="314">既定のクエリ範囲</text>
+  </g>
+</svg>

@@ -1,0 +1,14 @@
+<svg viewBox="0 0 900 760" role="img" aria-labelledby="fig-001-title fig-001-desc" data-hero-stack="">
+  <title id="fig-001-title">社内ナレッジベースの階層構造</title>
+  <desc id="fig-001-desc">データソースは、蒸留、埋め込み、検索、統合、合成の各層へ供給されます。</desc>
+  <defs>
+    <marker id="arrow-001" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M0 0 10 5 0 10Z" fill="currentColor" />
+    </marker>
+  </defs>
+  <g>
+    <path d="M235 104V656" />
+    <path d="M665 104V656" />
+    <path d="M450 152V608" />
+  </g>
+</svg>

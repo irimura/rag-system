@@ -1,0 +1,30 @@
+<svg viewBox="0 0 760 390" role="img" aria-labelledby="fig-009-title">
+  <title id="fig-009-title">MCPは検索プリミティブを公開し、Web UIは完全なエージェントパイプラインを実行</title>
+  <defs>
+    <marker id="arrow-009" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0 0 10 5 0 10Z" fill="currentColor" />
+    </marker>
+  </defs>
+  <g>
+    <rect x="50" y="52" width="286" height="276" fill="#fff" />
+    <rect x="424" y="52" width="286" height="276" fill="none" stroke="currentColor" />
+    <rect x="84" y="104" width="218" height="42" fill="#fff" />
+    <rect x="84" y="164" width="218" height="42" fill="#fff" />
+    <rect x="84" y="224" width="218" height="42" fill="#fff" />
+    <rect x="458" y="104" width="218" height="42" fill="#fff" />
+    <rect x="458" y="164" width="218" height="42" fill="#fff" />
+    <rect x="458" y="224" width="218" height="42" fill="#fff" />
+    <path marker-end="url(#arrow-009)" d="M567 146V156" />
+    <path marker-end="url(#arrow-009)" d="M567 206V216" />
+  </g>
+  <g text-anchor="middle" dominant-baseline="middle">
+    <text x="193" y="80">MCPクライアント</text>
+    <text x="567" y="80">Web UI</text>
+    <text x="193" y="125">ツールを直接呼び出す</text>
+    <text x="193" y="185">未加工の根拠行</text>
+    <text x="193" y="245">クライアントがオーケストレーション</text>
+    <text x="567" y="125">プランナー</text>
+    <text x="567" y="185">エグゼキューター</text>
+    <text x="567" y="245">合成</text>
+  </g>
+</svg>
