@@ -35,6 +35,14 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -r 04-corpus/allganize-ja-download/requirements.txt
 ```
 
+`cryptography` は、AES 暗号化された PDF を `pypdf` で読み取るために必要です。依存追加前に作成した既存の仮想環境では、次のコマンドで依存を更新してください。
+
+```bash
+cd ${repo_dir}
+source .venv-allganize/bin/activate
+python3 -m pip install -r 04-corpus/allganize-ja-download/requirements.txt
+```
+
 ## 3. PDF の一括取得と検証
 
 ```bash
@@ -49,6 +57,8 @@ python3 04-corpus/allganize-ja-download/download_pdfs.py --dataset-dir 04-corpus
 各 HTTP リクエストには User-Agent と 30 秒のタイムアウトを設定し、開始間隔を 1 秒以上空けます。一時的なネットワークエラー、HTTP 429、HTTP 5xx は最大 3 回、1 秒、2 秒の指数バックオフで再試行します。HTTP 4xx や HTML 応答は再試行せず失敗として記録します。
 
 既存 PDF はスキップするため、同じコマンドを再実行できます。既存ファイルも `pypdf` で開き、実ページ数を `documents.csv` の `page` と比較します。ページ数の不一致は標準エラーと manifest に警告として残ります。
+
+`cryptography>=3.1 is required for AES algorithm` と記録された PDF はダウンロード自体には成功しており、ページ数検証だけが失敗しています。上記の依存更新後に同じコマンドを再実行すると、保存済み PDF をスキップしてページ数検証をやり直します。
 
 タイムアウト、リクエスト間隔、保存先を変更する例です。
 

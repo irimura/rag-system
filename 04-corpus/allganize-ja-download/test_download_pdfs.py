@@ -53,6 +53,16 @@ def make_pdf(page_count: int) -> bytes:
 
 
 class DownloadPdfsTest(unittest.TestCase):
+    def test_aes_encrypted_pdf_page_count(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "aes.pdf"
+            writer = PdfWriter()
+            writer.add_blank_page(width=100, height=100)
+            writer.encrypt(user_password="", algorithm="AES-256-R5")
+            with path.open("wb") as handle:
+                writer.write(handle)
+            self.assertEqual(download_pdfs.pdf_page_count(path), 1)
+
     def test_transient_error_retries_three_attempts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             destination = Path(temporary) / "retry.pdf"
