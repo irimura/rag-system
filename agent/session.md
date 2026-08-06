@@ -1,6 +1,6 @@
 # セッションコンテキスト(コーディングエージェント向け引き継ぎ)
 
-最終更新: 2026-08-03(§21 案1b RAG バッチ識別ログを追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
+最終更新: 2026-08-06(§23 Allganize 日本語 RAG 評価 PDF 取得を追記)/ 対象ブランチ: main(リモートなし・ローカルのみ)
 
 このリポジトリは **vLLM + LangChain による日本語 RAG システムの設計・構築・評価ドキュメント一式**である。コードよりドキュメントが主体で、`03-deployment/` のアプリコードはサンプル実装(構文検証済み・実ビルド/実行は未実施)。本ファイルは過去セッションの決定事項・規約・注意点の引き継ぎであり、**ここに書かれた決定を無断で覆さないこと**(変更するときはユーザーに確認する)。
 
@@ -237,3 +237,11 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - issuer は `http://keycloak:8080/realms/rag` に固定し、利用端末の hosts と 8080 → Node B 8180 の LocalForward によりブラウザと Docker network 内の見え方を一致させる
 - `.env` の Keycloak 管理者変数は `KEYCLOAK_ADMIN_USERNAME` / `KEYCLOAK_ADMIN_PASSWORD`。compose がコンテナ内の `KC_BOOTSTRAP_ADMIN_USERNAME` / `KC_BOOTSTRAP_ADMIN_PASSWORD` へ写像する
 - `03-deployment/keycloak/README.md` を案1bだけで設定から alice/carol/eva のグループ同期確認まで完遂できる手順書とし、`03-deployment/README.md` §3.2 は概要と参照だけに整理した
+
+## 23. Allganize 日本語 RAG 評価 PDF 取得(2026-08-06)
+
+- `04-corpus/allganize-ja-download/` に、Hugging Face の CSV と公開元 PDF を分離して扱う取得スクリプト、固定依存、単体テスト、手順書を追加した。データセット clone 先は `04-corpus/allganize-ja/` とし Git 管理対象外にする
+- 保存名は `documents.csv` の `file_name` を `rag_evaluation_result.csv` の `target_file_name` と Unicode NFC で突合して決める。HTML 応答はスクレイピングせず失敗とし、User-Agent、タイムアウト、1秒間隔、最大3試行の指数バックオフ、既存ファイルスキップを実装した
+- manifest は成功/失敗、HTTP ステータス、絶対保存パス、サイズ、期待/実ページ数、エラーを記録し、失敗文書とページ数不一致を標準出力/標準エラーへ表示する。PDF ページ数は `pypdf==6.1.1` で検証する
+- 2026-08-06 時点の Hugging Face main は `documents.csv` 65行に対して評価対象 `target_file_name` が64種類で、未参照の `220408shoutengai01.pdf` が1件ある。評価用 PDF の取得対象は参照される64件に限定し、未参照行は通知して除外する
+- ローカル疑似 HTTP 応答による、PDF/HTML 判定、manifest、終了コード、既存ファイルスキップの単体テストは合格。公開元64サイトからの実ダウンロードと実ページ数照合は未実施

@@ -22,3 +22,5 @@ __pycache__/
 *.pyc
 .venv/
 .venv-corpus/
+.venv-allganize/
+04-corpus/allganize-ja/

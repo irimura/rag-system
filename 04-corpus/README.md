@@ -43,9 +43,10 @@ flowchart LR
 
 1. [事前準備](prerequisites.md) — Node B容量、venv、NAT、ライセンス、グループ認可
 2. [ダウンロードと前処理](download.md) — コーパス別の取得・代替手順・前処理・検収
-3. [案1(Chroma)](ingest-plan1.md)
-4. [案1b(Open WebUI)](ingest-plan1b.md)
-5. [案2(Qdrant + TEI)](ingest-plan2.md)
-6. [案3(OpenSearch)](ingest-plan3.md)
+3. [RAG-Evaluation-Dataset-JA PDF 取得](allganize-ja-download/README.md) — 評価用 PDF の一括取得、manifest、ページ数検証
+4. [案1(Chroma)](ingest-plan1.md)
+5. [案1b(Open WebUI)](ingest-plan1b.md)
+6. [案2(Qdrant + TEI)](ingest-plan2.md)
+7. [案3(OpenSearch)](ingest-plan3.md)
 
 実行前に [Node B構築手順](../03-deployment/README.md) の対象案を完了し、初回のコンテナイメージ・モデル取得を済ませてください。
