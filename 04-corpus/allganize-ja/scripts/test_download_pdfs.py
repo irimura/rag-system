@@ -53,6 +53,14 @@ def make_pdf(page_count: int) -> bytes:
 
 
 class DownloadPdfsTest(unittest.TestCase):
+    def test_default_paths_follow_integrated_layout(self) -> None:
+        root = SCRIPT.parents[1]
+        with patch.object(sys, "argv", [str(SCRIPT)]):
+            args = download_pdfs.parse_args()
+        self.assertEqual(args.dataset_dir, root / "dataset")
+        self.assertEqual(args.output_dir, root / "pdfs")
+        self.assertEqual(args.manifest, root / "manifest.csv")
+
     def test_aes_encrypted_pdf_page_count(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "aes.pdf"

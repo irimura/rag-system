@@ -240,7 +240,8 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 
 ## 23. Allganize 日本語 RAG 評価 PDF 取得(2026-08-06)
 
-- `04-corpus/allganize-ja-download/` に、Hugging Face の CSV と公開元 PDF を分離して扱う取得スクリプト、固定依存、単体テスト、手順書を追加した。データセット clone 先は `04-corpus/allganize-ja/` とし Git 管理対象外にする
+- PDF取得資材は `04-corpus/allganize-ja/` へ統合した。取得手順は `docs/download.md`、スクリプトとテストは `scripts/download_pdfs.py` / `scripts/test_download_pdfs.py`、固定依存は `requirements-download.txt` に置く
+- Hugging Faceデータセットのclone先は `04-corpus/allganize-ja/dataset/` とする。clone後は入れ子の `.git` を含むため、親リポジトリでは `dataset/*` をGit管理対象外にする。PDFは `pdfs/`、取得結果は `manifest.csv` に置く
 - 保存名は `documents.csv` の `file_name` を `rag_evaluation_result.csv` の `target_file_name` と Unicode NFC で突合して決める。HTML 応答はスクレイピングせず失敗とし、User-Agent、タイムアウト、1秒間隔、最大3試行の指数バックオフ、既存ファイルスキップを実装した
 - manifest は成功/失敗、HTTP ステータス、絶対保存パス、サイズ、期待/実ページ数、エラーを記録し、失敗文書とページ数不一致を標準出力/標準エラーへ表示する。PDF ページ数は `pypdf==6.1.1` で検証する
 - 2026-08-06 時点の Hugging Face main は `documents.csv` 65行に対して評価対象 `target_file_name` が64種類で、未参照の `220408shoutengai01.pdf` が1件ある。評価用 PDF の取得対象は参照される64件に限定し、未参照行は通知して除外する
@@ -259,3 +260,4 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - `docs/install-all.md` に9プロダクトの一括インストール手順を追加した。共通OS依存は1回だけ導入し、activateを使わずvenv内のPython/CLIを直接指定する。ライセンス確認が必要な3製品とPython互換性に懸念があるNDLOCRは停止条件を設け、パッケージ導入と初回モデル取得を分離した
 - AnyDocのpip版はCLIの有無に依存させず、共通ラッパーから `anydoc.to_markdown()` を呼ぶ。インストール完了条件も同APIがcallableであることとした
 - 変換手順書の実行例はactivate手順を残しつつ、`.venv-<product>/bin/python` を直接指定する形へ統一した。共通ラッパーの子プロセスは `sys.executable` の親ディレクトリをPATH先頭へ追加し、olmOCRも `{python}` で同じインタープリターを使う
+- 旧取得専用ディレクトリは廃止し、取得からサンプル選定、変換比較までを `04-corpus/allganize-ja/README.md` の単一フローへ統合した

@@ -40,10 +40,11 @@ class DownloadResult:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset-dir", type=Path, required=True, help="CSV を含む clone 先")
-    parser.add_argument("--output-dir", type=Path, help="PDF 保存先（既定: DATASET_DIR/pdfs）")
-    parser.add_argument("--manifest", type=Path, help="manifest.csv（既定: DATASET_DIR/manifest.csv）")
+    root = Path(__file__).resolve().parents[1]
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--dataset-dir", type=Path, default=root / "dataset", help="CSV を含む Hugging Face clone 先")
+    parser.add_argument("--output-dir", type=Path, default=root / "pdfs", help="PDF 保存先")
+    parser.add_argument("--manifest", type=Path, default=root / "manifest.csv", help="manifest.csv の保存先")
     parser.add_argument("--timeout", type=float, default=30.0, help="1 回の HTTP タイムアウト秒（既定: 30）")
     parser.add_argument("--interval", type=float, default=1.0, help="HTTP リクエスト開始間隔の秒数（既定: 1）")
     return parser.parse_args()

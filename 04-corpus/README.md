@@ -43,7 +43,7 @@ flowchart LR
 
 1. [事前準備](prerequisites.md) — Node B容量、venv、NAT、ライセンス、グループ認可
 2. [ダウンロードと前処理](download.md) — コーパス別の取得・代替手順・前処理・検収
-3. [RAG-Evaluation-Dataset-JA PDF 取得](allganize-ja-download/README.md) — 評価用 PDF の一括取得、manifest、ページ数検証
+3. [RAG-Evaluation-Dataset-JA PDF取得・変換検証](allganize-ja/README.md) — 評価用PDFの取得、manifest、サンプル選定、変換比較
 4. [案1(Chroma)](ingest-plan1.md)
 5. [案1b(Open WebUI)](ingest-plan1b.md)
 6. [案2(Qdrant + TEI)](ingest-plan2.md)

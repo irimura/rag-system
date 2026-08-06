@@ -1,6 +1,6 @@
 pdfs/
+manifest.csv
 dataset/*
-!dataset/.gitkeep
 out/*/*.md
 metrics/*.csv
 vendor/

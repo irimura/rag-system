@@ -4,21 +4,22 @@ Allganize RAG-Evaluation-Dataset-JA の評価対象PDFを、Node A（g6.xlarge�
 
 ## 文書一覧
 
+- [PDF取得手順書](docs/download.md)
 - [製品説明資料](docs/products.md)
 - [全プロダクト一括インストール手順書](docs/install-all.md)
 - [比較手順書](docs/compare.md)
 - 変換手順書: [Docling](docs/convert/docling.md) / [Docling VLM](docs/convert/docling-vlm.md) / [MinerU](docs/convert/mineru.md) / [PaddleOCR](docs/convert/paddleocr.md) / [AnyDoc](docs/convert/anydoc.md) / [YomiToku](docs/convert/yomitoku.md) / [NDLOCR](docs/convert/ndlocr.md) / [olmOCR](docs/convert/olmocr.md) / [Marker](docs/convert/marker.md)
 - [比較結果](results/comparison.md)
-- 点検結果: [products](checks/products.md) / [install-all](checks/install-all.md) / [compare](checks/compare.md) / [convert](checks/convert/)
+- 点検結果: [download](checks/download.md) / [products](checks/products.md) / [install-all](checks/install-all.md) / [compare](checks/compare.md) / [convert](checks/convert/)
 
 ## 実行順序
 
-1. `dataset/` に `documents.csv` と `rag_evaluation_result.csv`、`pdfs/` に評価対象64件を配置します。
-2. `python3 scripts/select_sample.py` を実行し、`sample_list.csv` を生成します。`document_type_guess` はメタデータから得た推定値にすぎません。「未判定」だけでなく全行のPDFを確認し、「文字埋込み」か「スキャン」に直します。
-3. [製品説明資料](docs/products.md)でライセンスと適用範囲を確認します。
-4. [一括インストール手順書](docs/install-all.md)に従い、各プロダクトを別venvへ導入します。
-5. 各変換手順書に従い、サンプルだけを変換します。
-6. [比較手順書](docs/compare.md)に従って速度、成功率、精度、表の再現性を評価します。
-7. 選定基準を満たした上位プロダクトだけを `--all` 付きで再実行します。
+0. [PDF取得手順書](docs/download.md)に従い、Hugging Faceデータセットを `dataset/` へcloneし、評価対象PDFを `pdfs/` へ取得します。
+1. `python3 scripts/select_sample.py` を実行し、`sample_list.csv` を生成します。`document_type_guess` はメタデータから得た推定値にすぎません。「未判定」だけでなく全行のPDFを確認し、「文字埋込み」か「スキャン」に直します。
+2. [製品説明資料](docs/products.md)でライセンスと適用範囲を確認します。
+3. [一括インストール手順書](docs/install-all.md)に従い、各プロダクトを別venvへ導入します。
+4. 各変換手順書に従い、サンプルだけを変換します。
+5. [比較手順書](docs/compare.md)に従って速度、成功率、精度、表の再現性を評価します。
+6. 選定基準を満たした上位プロダクトだけを `--all` 付きで再実行します。
 
-`sample_list.csv` はデータ未配置のため、現在はヘッダーだけです。変換結果とメトリクスは大容量になるためGit管理しません。
+`sample_list.csv` はデータ未配置のため、現在はヘッダーだけです。Hugging Faceのclone、PDF、manifest、変換結果、メトリクスはGit管理しません。
