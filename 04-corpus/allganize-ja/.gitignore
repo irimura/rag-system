@@ -1,0 +1,8 @@
+pdfs/
+dataset/*
+!dataset/.gitkeep
+out/*/*.md
+metrics/*.csv
+vendor/
+.venv*/
+__pycache__/

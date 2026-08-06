@@ -23,4 +23,9 @@ __pycache__/
 .venv/
 .venv-corpus/
 .venv-allganize/
-04-corpus/allganize-ja/
+04-corpus/allganize-ja/pdfs/
+04-corpus/allganize-ja/dataset/*
+!04-corpus/allganize-ja/dataset/.gitkeep
+04-corpus/allganize-ja/out/*/*.md
+04-corpus/allganize-ja/metrics/*.csv
+04-corpus/allganize-ja/vendor/
