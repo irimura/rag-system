@@ -108,7 +108,7 @@ set -e
 rm -fv .venv-mineru/.install-complete
 "${base_python}" -m venv .venv-mineru
 .venv-mineru/bin/python -m pip install --upgrade pip
-.venv-mineru/bin/python -m pip install 'mineru[pipeline]>=3,<4' pypdf psutil
+.venv-mineru/bin/python -m pip install 'mineru[pipeline]>=3,<4' pypdf psutil 'six==1.17.0' 'cryptography==49.0.0'
 .venv-mineru/bin/python -m pip check
 .venv-mineru/bin/mineru-models-download
 .venv-mineru/bin/mineru --help

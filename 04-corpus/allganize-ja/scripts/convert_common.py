@@ -115,9 +115,14 @@ def main(product: str) -> int:
                 try:
                     parent = psutil.Process(proc.pid)
                     family = [parent, *parent.children(recursive=True)]
+                    resource_pid = os.environ.get("CONVERT_RESOURCE_PID")
+                    if resource_pid:
+                        resource_parent = psutil.Process(int(resource_pid))
+                        family.extend([resource_parent, *resource_parent.children(recursive=True)])
+                    family = list({member.pid: member for member in family}.values())
                     memory_peak[0] = max(memory_peak[0], sum(p.memory_info().rss for p in family if p.is_running()) / 1024**2)
                     vram_peak[0] = max(vram_peak[0], gpu_memory({p.pid for p in family if p.is_running()}))
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                except (ValueError, psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
                 stop.wait(0.5)
         watcher = threading.Thread(target=watch_resources, daemon=True)

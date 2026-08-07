@@ -261,3 +261,11 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - AnyDocのpip版はCLIの有無に依存させず、共通ラッパーから `anydoc.to_markdown()` を呼ぶ。インストール完了条件も同APIがcallableであることとした
 - 変換手順書の実行例はactivate手順を残しつつ、`.venv-<product>/bin/python` を直接指定する形へ統一した。共通ラッパーの子プロセスは `sys.executable` の親ディレクトリをPATH先頭へ追加し、olmOCRも `{python}` で同じインタープリターを使う
 - 旧取得専用ディレクトリは廃止し、取得からサンプル選定、変換比較までを `04-corpus/allganize-ja/README.md` の単一フローへ統合した
+
+## 25. Allganize変換用Node A変更・MinerU常駐API(2026-08-07)
+
+- PDF変換検証に使うNode Aはg6e.2xlargeへ変更する。8 vCPU、RAM 64 GiB、NVIDIA L40S 1基、VRAM 48 GB公称を前提とする。`04-corpus/allganize-ja/` の全手順書に残る旧g6.xlarge・L4・RAM 16 GB表記の横断更新は未実施
+- MinerU pipelineの実機導入では、OCR内部処理に必要な`six`が依存宣言から漏れて全件失敗し、AES暗号化PDFのページ数取得には`cryptography`が不足した。MinerU venvへ`six==1.17.0`と`cryptography==49.0.0`を追加すると、L40S上で48ページの変換が完了した
+- MinerUはPDFごとの一時API方式に加え、`convert_mineru_api.py`から常駐`mineru-api`へ接続する方式を追加した。API URLは`MINERU_API_URL`、API PIDファイルは`MINERU_API_PID_FILE`で変更できる
+- 常駐API方式は`/tmp/allganize-mineru-api.pid`を既定PIDファイルとし、共通ラッパーが変換クライアントとAPIプロセス系統のRAM・VRAMを合算して観測する。モデル初期化を本計測から除く場合は、API起動後に代表PDFを1件変換してウォームアップする
+- 常駐APIと一時APIは同じ`out/mineru/`と`metrics/mineru.csv`を使うため、同一比較結果へ方式を混在させず、実行方式とウォームアップ有無を比較結果へ記録する
