@@ -30,7 +30,7 @@ sudo apt-get install -y python3-venv python3-dev build-essential poppler-utils
 python3 -m venv .venv-docling-vlm-commercial
 source .venv-docling-vlm-commercial/bin/activate
 python -m pip install --upgrade pip
-python -m pip install 'docling[vlm]==2.*' pypdf psutil
+python -m pip install 'docling[vlm]==2.*' 'pypdf[crypto]' psutil
 python -m pip check
 python -m pip freeze > metrics/docling-vlm-commercial-versions.txt
 ```
@@ -137,6 +137,8 @@ test "${current_vllm_pid}" = "${DOCLING_VLLM_PID}"
 - 画像入力に関するHTTP 400の場合は、モデルとvLLMがOpenAI互換の画像入力に対応しているか確認します。
 - 事前確認が `FAILED` になった場合は、HTTPステータスとvLLM側のアクセス制御済みログを確認します。応答本文は共用ログや障害票へ貼り付けません。
 - Markdownが空または説明文だけの場合は、プロンプトとモデルの文書変換能力を確認します。実モデル名は障害票へ記載しません。
+- `Docling変換結果が空です` の場合は、メトリクスに記録された `status`、`error_count`、`error_kinds` を確認します。エラー本文は機密情報を含む可能性があるため、アダプターは記録しません。
+- `cryptography` を要求された場合は、`.venv-docling-vlm-commercial/bin/python -m pip install 'pypdf[crypto]'` を実行します。
 - タイムアウト時は `DOCLING_VLLM_TIMEOUT` を増やします。出力が途中で切れる場合は `DOCLING_VLLM_MAX_TOKENS` とvLLM側のコンテキスト長を確認します。
 - PDF全体が7200秒で打ち切られる場合は、ページ数とサンプル実測から `CONVERT_TIMEOUT` を見積もり直します。
 - `DOCLING_VLLM_PID` の確認に失敗した場合は、実際に起動に使ったComposeプロジェクトで `docker compose ps vllm` を実行し、コンテナの状態と `vllm_compose_dir` を確認します。

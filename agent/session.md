@@ -280,4 +280,5 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - Node Aの既存vLLMサービスは8080番ポートで待ち受ける。`docling-vlm-commercial`は`http://127.0.0.1:8080/v1/chat/completions`へ接続する
 - 常駐vLLMの計測起点はGPUワーカーPIDではなく、Docker ComposeのvLLMコンテナを`docker inspect`して得るホスト側`.State.Pid`とする。これはコンテナPID 1に対応するため、APIサーバーと子孫ワーカーを計測対象に含められる
 - 変換終了時にvLLMコンテナのホストPIDを再取得し、開始時の`DOCLING_VLLM_PID`と比較する。コンテナ再起動でPIDが変わった実行は、RAM・VRAMの過少計測があり得るため比較値に採用しない。Composeのサービス名は`vllm`を前提とする
+- Docling 2.118.0では従来の`ApiVlmOptions`が受理され、`VlmPipelineOptions.generate_page_images`は既定でTrue。空出力時は機密性のあるエラー本文を保存せず、`ConversionResult`のstatus、エラー件数、型・コンポーネント分類だけをメトリクスへ記録する。AES PDF対応には`pypdf[crypto]`を使う
 - この比較枠は当初の無償プロダクト比較とは別枠である。モデル契約、PDF入力条件、生成物の利用条件、追加費用を確認できない場合は実行しない

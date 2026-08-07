@@ -52,6 +52,23 @@ def load_prompt() -> str:
     return prompt
 
 
+def conversion_diagnostic(result: object) -> str:
+    """機密性のあるエラー本文を含めず、変換結果の分類だけを返す。"""
+    status = getattr(result, "status", "unknown")
+    status_value = getattr(status, "value", status)
+    errors = list(getattr(result, "errors", []) or [])
+    kinds: list[str] = []
+    for error in errors[:10]:
+        fields = [type(error).__name__]
+        for name in ("component_type", "module_name", "error_type"):
+            value = getattr(error, name, None)
+            if value is not None:
+                fields.append(f"{name}={getattr(value, 'value', value)}")
+        kinds.append("/".join(fields))
+    kinds_text = ",".join(kinds) if kinds else "none"
+    return f"status={status_value}, error_count={len(errors)}, error_kinds={kinds_text}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=Path, required=True)
@@ -99,9 +116,12 @@ def main() -> int:
                 )
             }
         )
-        document = converter.convert(args.input).document
+        result = converter.convert(args.input)
+        markdown = result.document.export_to_markdown()
+        if not markdown.strip():
+            raise RuntimeError(f"Docling変換結果が空です ({conversion_diagnostic(result)})")
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(document.export_to_markdown(), encoding="utf-8")
+        args.output.write_text(markdown, encoding="utf-8")
     except Exception as exc:
         message = str(exc).replace(model_name, "[REDACTED_MODEL]").replace(api_key, "[REDACTED_API_KEY]")
         raise SystemExit(f"{type(exc).__name__}: {message}") from None
