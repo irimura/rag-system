@@ -20,9 +20,12 @@ def required_env(name: str) -> str:
     return value
 
 
+MAX_RESPONSE_BYTES = 1_000_000
+
+
 def test_png_data_url() -> str:
-    """外部ファイルを使わず、32×32ピクセルの白いPNGを生成する。"""
-    width = height = 32
+    """外部ファイルを使わず、64×64ピクセルの白いPNGを生成する。"""
+    width = height = 64
     raw = b"".join(b"\x00" + b"\xff\xff\xff" * width for _ in range(height))
 
     def chunk(kind: bytes, data: bytes) -> bytes:
@@ -73,7 +76,10 @@ def main() -> int:
     )
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
-            result = json.load(response)
+            body = response.read(MAX_RESPONSE_BYTES + 1)
+        if len(body) > MAX_RESPONSE_BYTES:
+            raise ValueError
+        result = json.loads(body)
         content = result["choices"][0]["message"]["content"]
         if not isinstance(content, str) or not content.strip():
             raise ValueError

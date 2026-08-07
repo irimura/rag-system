@@ -40,7 +40,7 @@ python -m pip freeze > metrics/docling-vlm-commercial-versions.txt
 APIの接続情報を設定します。モデル名とAPIキーはシェル履歴へ残さないよう、対話入力します。
 
 ```bash
-export DOCLING_VLLM_URL=http://127.0.0.1:8000/v1/chat/completions
+export DOCLING_VLLM_URL=http://127.0.0.1:8080/v1/chat/completions
 read -rsp 'vLLM model name: ' DOCLING_VLLM_MODEL; printf '\n'; export DOCLING_VLLM_MODEL
 read -rsp 'vLLM API key: ' DOCLING_VLLM_API_KEY; printf '\n'; export DOCLING_VLLM_API_KEY
 ```
@@ -48,10 +48,13 @@ read -rsp 'vLLM API key: ' DOCLING_VLLM_API_KEY; printf '\n'; export DOCLING_VLL
 APIへ接続できることだけを確認します。応答本文は表示しません。
 
 ```bash
-curl --fail --silent --show-error -o /dev/null -H "Authorization: Bearer ${DOCLING_VLLM_API_KEY}" http://127.0.0.1:8000/v1/models
+curl --fail --silent --show-error -o /dev/null -H @- http://127.0.0.1:8080/v1/models \
+  <<< "Authorization: Bearer ${DOCLING_VLLM_API_KEY}"
 ```
 
-次に、32×32ピクセルのテスト画像を1回送信し、画像入力に対応していることを確認します。この確認では推論が1回発生します。スクリプトが表示するのは `画像入力確認: OK` またはモデル名を含まない失敗理由だけです。モデル名、APIキー、応答本文は表示しません。
+`-H @-` は認証ヘッダーを標準入力から渡します。APIキーはcurlのコマンドライン引数へ含まれません。
+
+次に、64×64ピクセルのテスト画像を1回送信し、画像入力に対応していることを確認します。この確認では推論が1回発生します。スクリプトが表示するのは `画像入力確認: OK` またはモデル名を含まない失敗理由だけです。モデル名、APIキー、応答本文は表示しません。
 
 ```bash
 .venv-docling-vlm-commercial/bin/python scripts/check_docling_vlm_commercial_api.py
@@ -59,14 +62,15 @@ curl --fail --silent --show-error -o /dev/null -H "Authorization: Bearer ${DOCLI
 
 この試験はAPIが画像を受理できることだけを確認します。PDF変換の品質やMarkdownの再現性は、後続のサンプル変換で評価してください。
 
-GPUを使うプロセスがvLLMの1件だけであることを確認し、そのPIDを計測対象として設定します。複数のPIDが表示された場合は自動選択せず、vLLMのPIDを確認して設定してください。
+vLLMサービスの最上位プロセスを計測対象として設定します。GPUを直接使うワーカーPIDではなく、systemdの `MainPID` を指定することで、APIサーバーとその子孫ワーカーを計測します。
 
 ```bash
-mapfile -t gpu_pids < <(nvidia-smi --query-compute-apps=pid --format=csv,noheader,nounits)
-if [ "${#gpu_pids[@]}" -eq 1 ]; then export DOCLING_VLLM_PID="${gpu_pids[0]}"; else unset DOCLING_VLLM_PID; printf '%s\n' 'GPUプロセスが1件ではありません。vLLMのPIDを手動で設定してください。' >&2; fi
-test -n "${DOCLING_VLLM_PID:-}"
-ps -p "${DOCLING_VLLM_PID}" -o pid=,comm=
+export DOCLING_VLLM_PID="$(systemctl show --property MainPID --value vllm.service)"
+test "${DOCLING_VLLM_PID}" -gt 0
+ps -p "${DOCLING_VLLM_PID}" -o pid=,ppid=,comm=
 ```
+
+systemd以外で起動している場合は、起動管理側で確認した最上位のAPIサーバーPIDを設定してください。`nvidia-smi`に表示されるエンジンワーカーPIDは指定しません。
 
 必要に応じて、モデル名を含まないプロンプトファイルと実行設定を指定します。
 
@@ -75,7 +79,10 @@ export DOCLING_VLLM_TIMEOUT=300
 export DOCLING_VLLM_MAX_TOKENS=8192
 export DOCLING_VLLM_CONCURRENCY=4
 export DOCLING_VLLM_SCALE=2.0
+export CONVERT_TIMEOUT=21600
 ```
+
+`CONVERT_TIMEOUT` はPDF 1件全体の制限秒数です。既定値は7200秒です。数百ページのPDFでは、費用を伴う処理が完了直前に打ち切られないよう、ページ数と事前実測に基づいて増やしてください。
 
 サンプルを変換します。
 
@@ -114,6 +121,8 @@ python scripts/aggregate_metrics.py
 - 事前確認が `FAILED` になった場合は、HTTPステータスとvLLM側のアクセス制御済みログを確認します。応答本文は共用ログや障害票へ貼り付けません。
 - Markdownが空または説明文だけの場合は、プロンプトとモデルの文書変換能力を確認します。実モデル名は障害票へ記載しません。
 - タイムアウト時は `DOCLING_VLLM_TIMEOUT` を増やします。出力が途中で切れる場合は `DOCLING_VLLM_MAX_TOKENS` とvLLM側のコンテキスト長を確認します。
-- `DOCLING_VLLM_PID` の確認に失敗した場合は、`nvidia-smi` でvLLMのホストPIDを確認します。
+- PDF全体が7200秒で打ち切られる場合は、ページ数とサンプル実測から `CONVERT_TIMEOUT` を見積もり直します。
+- `DOCLING_VLLM_PID` の確認に失敗した場合は、`systemctl status vllm.service` でサービス状態を確認します。systemd以外の場合は、起動管理側で最上位のAPIサーバーPIDを確認します。
+- vLLMのリクエストログにモデル名や本文を残さないでください。導入済みvLLMの `vllm serve --help` で `--disable-log-requests` の対応を確認し、非公開モデルの管理者が起動設定へ反映します。サービス設定やログの内容を共用ログへ貼り付けません。
 
 変換アダプター自身が生成する例外は、モデル名とAPIキーを伏せ字にしてからメトリクスへ渡します。DoclingとvLLMを含む外部ライブラリのログ管理とアクセス制御は別途必要です。
