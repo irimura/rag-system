@@ -40,6 +40,10 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=Path(__file__).parents[1] / "sample_list.csv")
     parser.add_argument("--size", type=int, default=10)
     parser.add_argument("--seed", type=int, default=20260806)
+    parser.add_argument(
+        "--domain",
+        help="指定したdomainと完全一致する文書をすべて選ぶ（大文字小文字は区別しない）",
+    )
     args = parser.parse_args()
 
     with (args.dataset_dir / "documents.csv").open(encoding="utf-8-sig", newline="") as f:
@@ -73,22 +77,32 @@ def main() -> int:
             "pdf_exists": str((args.pdf_dir / name).is_file()).lower(),
         })
 
-    # 貪欲集合被覆: domain、文書タイプ、評価typeの未充足要素を最も多く埋める文書を選ぶ。
     selected: list[dict[str, str]] = []
-    covered: Counter[str] = Counter()
-    while candidates and len(selected) < args.size:
-        def score(item: dict[str, str]) -> tuple[int, int, str]:
-            features = {f"domain:{item['domain']}", f"doc:{item['document_type_guess']}"}
-            features |= {f"eval:{v}" for v in item["evaluation_types"].split("|")}
-            gain = sum(1 for feature in features if covered[feature] == 0)
-            rarity = sum(1 for feature in features if covered[feature] < 2)
-            return (-gain, -rarity, stable_rank(args.seed, item["file_name"]))
+    if args.domain:
+        requested_domain = norm(args.domain)
+        selected = sorted(
+            (item for item in candidates if item["domain"].casefold() == requested_domain.casefold()),
+            key=lambda item: item["file_name"],
+        )
+        if not selected:
+            available = ", ".join(sorted({item["domain"] for item in candidates}))
+            parser.error(f"domain={requested_domain!r} に一致する文書がありません。候補: {available}")
+    else:
+        # 貪欲集合被覆: domain、文書タイプ、評価typeの未充足要素を最も多く埋める文書を選ぶ。
+        covered: Counter[str] = Counter()
+        while candidates and len(selected) < args.size:
+            def score(item: dict[str, str]) -> tuple[int, int, str]:
+                features = {f"domain:{item['domain']}", f"doc:{item['document_type_guess']}"}
+                features |= {f"eval:{v}" for v in item["evaluation_types"].split("|")}
+                gain = sum(1 for feature in features if covered[feature] == 0)
+                rarity = sum(1 for feature in features if covered[feature] < 2)
+                return (-gain, -rarity, stable_rank(args.seed, item["file_name"]))
 
-        chosen = min(candidates, key=score)
-        candidates.remove(chosen)
-        selected.append(chosen)
-        covered.update({f"domain:{chosen['domain']}", f"doc:{chosen['document_type_guess']}"})
-        covered.update(f"eval:{v}" for v in chosen["evaluation_types"].split("|"))
+            chosen = min(candidates, key=score)
+            candidates.remove(chosen)
+            selected.append(chosen)
+            covered.update({f"domain:{chosen['domain']}", f"doc:{chosen['document_type_guess']}"})
+            covered.update(f"eval:{v}" for v in chosen["evaluation_types"].split("|"))
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fields = ["file_name", "domain", "document_type_guess", "evaluation_types", "target_page_nos", "pdf_exists"]

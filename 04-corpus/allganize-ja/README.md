@@ -16,6 +16,7 @@ Allganize RAG-Evaluation-Dataset-JA の評価対象PDFを、Node A（g6.xlarge�
 
 0. [PDF取得手順書](docs/download.md)に従い、Hugging Faceデータセットを `dataset/` へcloneし、評価対象PDFを `pdfs/` へ取得します。
 1. `python3 scripts/select_sample.py` を実行し、`sample_list.csv` を生成します。`document_type_guess` はメタデータから得た推定値にすぎません。「未判定」だけでなく全行のPDFを確認し、「文字埋込み」か「スキャン」に直します。
+   特定domainの全件を対象にする場合は、`python3 scripts/select_sample.py --domain IT` のように指定します。この場合、`--size` は使用しません。
 2. [製品説明資料](docs/products.md)でライセンスと適用範囲を確認します。
 3. [一括インストール手順書](docs/install-all.md)に従い、各プロダクトを別venvへ導入します。
 4. 各変換手順書に従い、サンプルだけを変換します。

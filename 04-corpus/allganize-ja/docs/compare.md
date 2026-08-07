@@ -14,6 +14,13 @@ python3 scripts/select_sample.py
 column -s, -t sample_list.csv
 ```
 
+特定domainの全件を比較する場合は、次のように完全一致するdomain名を指定する。この場合、`--size` は使用しない。
+
+```bash
+python3 scripts/select_sample.py --domain IT
+column -s, -t sample_list.csv
+```
+
 `document_type_guess` はメタデータに基づく推定値である。全行について `pdffonts` でフォント有無を確認し、1ページ目も表示して「文字埋込み」または「スキャン」に直す。「未判定」を残さない。約10件でdomain、文書タイプ、評価type（段落・表・画像）が不足した場合は、候補を手動で入れ替え、理由をCSV末尾の別管理メモではなく比較結果へ記録する。
 
 各[変換手順書](convert/)に従って、`--all` を付けずに実行する。変換済みのMarkdownは既定でスキップされる。失敗だけを再試行するときは原因を直して `--force` を付ける。
