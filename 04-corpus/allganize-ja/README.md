@@ -8,7 +8,7 @@ Allganize RAG-Evaluation-Dataset-JA の評価対象PDFを、Node A（g6.xlarge�
 - [製品説明資料](docs/products.md)
 - [全プロダクト一括インストール手順書](docs/install-all.md)
 - [比較手順書](docs/compare.md)
-- 変換手順書: [Docling](docs/convert/docling.md) / [Docling VLM](docs/convert/docling-vlm.md) / [MinerU](docs/convert/mineru.md) / [PaddleOCR](docs/convert/paddleocr.md) / [AnyDoc](docs/convert/anydoc.md) / [YomiToku](docs/convert/yomitoku.md) / [NDLOCR](docs/convert/ndlocr.md) / [olmOCR](docs/convert/olmocr.md) / [Marker](docs/convert/marker.md)
+- 変換手順書: [Docling](docs/convert/docling.md) / [Docling VLM](docs/convert/docling-vlm.md) / [Docling商用VLM](docs/convert/docling-vlm-commercial.md) / [MinerU](docs/convert/mineru.md) / [PaddleOCR](docs/convert/paddleocr.md) / [AnyDoc](docs/convert/anydoc.md) / [YomiToku](docs/convert/yomitoku.md) / [NDLOCR](docs/convert/ndlocr.md) / [olmOCR](docs/convert/olmocr.md) / [Marker](docs/convert/marker.md)
 - [比較結果](results/comparison.md)
 - 点検結果: [download](checks/download.md) / [products](checks/products.md) / [install-all](checks/install-all.md) / [compare](checks/compare.md) / [convert](checks/convert/)
 
@@ -19,6 +19,7 @@ Allganize RAG-Evaluation-Dataset-JA の評価対象PDFを、Node A（g6.xlarge�
    特定domainの全件を対象にする場合は、`python3 scripts/select_sample.py --domain IT` のように指定します。この場合、`--size` は使用しません。
 2. [製品説明資料](docs/products.md)でライセンスと適用範囲を確認します。
 3. [一括インストール手順書](docs/install-all.md)に従い、各プロダクトを別venvへ導入します。
+   `docling-vlm-commercial` は契約確認を要する任意の追加比較枠であるため、一括インストールの対象外です。[専用手順書](docs/convert/docling-vlm-commercial.md)に従って別途導入します。
 4. 各変換手順書に従い、サンプルだけを変換します。
 5. [比較手順書](docs/compare.md)に従って速度、成功率、精度、表の再現性を評価します。
 6. 選定基準を満たした上位プロダクトだけを `--all` 付きで再実行します。

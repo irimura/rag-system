@@ -11,7 +11,8 @@
 | 識別子 | 方式 | 文字埋込み / スキャン | 主な出力 | 表・数式・図 | 日本語 | GPU | ライセンスと無償利用条件 | 公開値・速度目安 | 導入 |
 |---|---|---|---|---|---|---|---|---|---|
 | `docling` | PDF解析＋MLレイアウト解析＋OCR | 両方 | Markdown、JSON、HTML等 | TableFormer、数式・画像参照 | OCRエンジン次第。本検証で実測 | 任意 | コードMIT。モデルごとの条件も確認 | 公式は特定環境の一律速度を保証しない | 中 |
-| `docling-vlm` | ページ画像→VLM | 両方 | Markdown、JSON等 | DocTagsで構造化 | 日本語公開ベンチなし | 既定GPU | DoclingはMIT。Granite DoclingはApache-2.0、SmolDoclingはモデルカード確認 | 256M級モデル。実測必須 | 中〜高 |
+| `docling-vlm` | ページ画像→公開VLM | 両方 | Markdown、JSON等 | DocTagsで構造化 | 日本語公開ベンチなし | 既定GPU | DoclingはMIT。Granite DoclingはApache-2.0、SmolDoclingはモデルカード確認 | 256M級モデル。実測必須 | 中〜高 |
+| `docling-vlm-commercial` | ページ画像→非公開VLM API | 両方 | Markdown | モデルとプロンプトによる | 公開情報を記載しない。本データセットで実測 | vLLM側で使用 | DoclingはMIT。非公開モデルの契約、入力、生成物、費用条件を別途確認 | 公開値を比較根拠にせず実測 | 高 |
 | `mineru` | レイアウト・OCR・表・数式の複合パイプライン | 両方 | Markdown、JSON、LaTeX | 対応 | 109言語を掲げるが日本語個別値は未公表 | 推奨 | 現行配布物はAGPL-3.0。配布・ネットワーク提供時は法務確認 | olmOCR-Benchの公開比較あり。日本語専用値ではない | 高 |
 | `paddleocr` | OCR＋MLレイアウト・表解析 | 両方。特にスキャン | Markdown、JSON、HTML表 | 表、式、図領域 | PP-OCRv5は日本語対応。公式の日本語評価列あり | 既定GPU | Apache-2.0 | 公式値は内部評価集合を含むため本PDFで再測定 | 高 |
 | `anydoc` | Rust製の決定的パーサー | 文字埋込みのみ / 不可 | GFM | 埋込みテキスト・表。画像は代替文 | OCRなし | 不要 | MIT | 公式混合文書ベンチ中央値4.4 ms。ただしPDFだけの値ではない | 低 |
@@ -27,6 +28,8 @@ GFMはGitHub Flavored Markdown、VLMは画像と言語を扱う視覚言語モ�
 ### Docling / Docling VLM
 
 標準パイプラインはPDFバックエンド、レイアウト検出、OCR、TableFormerを組み合わせる。VLMパイプラインはページ画像から構造を生成するため、読み順が崩れる文書を救済できる一方、生成誤りも評価対象になる。公式文書は `standard` と `vlm` を別pipelineとして説明し、VLMの既定をGranite Doclingとしている（[Doclingパイプライン公式文書](https://docling-project.github.io/docling/examples/agent_skill/docling-document-intelligence/pipelines/)）。コードの条件は[MITライセンス](https://github.com/docling-project/docling/blob/main/LICENSE)である。
+
+`docling-vlm-commercial` は、OpenAI互換APIを提供する非公開VLMを使う追加比較枠である。モデル名とAPIキーを成果物へ残さず、内部承認済み別名で結果を識別する。モデルの非公開性は利用不可の理由にならないが、画像入力、Markdown応答、契約条件を確認できない場合は実行しない。DoclingはvLLMを含むOpenAI互換のリモートVLMに対応する（[DoclingリモートVLM公式文書](https://docling-project.github.io/docling/usage/vision_models/)）。
 
 ### MinerU
 
@@ -60,5 +63,5 @@ FirecrawlのAnyDocはRust製で、MLモデルを使わず文字埋込みPDFを�
 
 - 日本語OCRの公開値がないプロダクトは、本検証のキーワード一致率と目視で比較する。
 - 出力文字数が多いだけでは精度が高いと判断しない。重複、ヘッダー混入、幻覚を確認する。
-- VLM系の速度とVRAMはモデル、量子化、画像解像度で変わる。実行時のモデル名とバージョンを結果へ記録する。
+- VLM系の速度とVRAMはモデル、量子化、画像解像度で変わる。公開モデルはモデル名とバージョンを結果へ記録する。非公開モデルは内部承認済み別名を記録し、実モデル名との対応をアクセス制御された別台帳で管理する。
 - ライセンス判断はソフトウェア本体、モデル重み、依存物を分ける。本資料は法的助言ではない。

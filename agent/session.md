@@ -269,3 +269,12 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - MinerUはPDFごとの一時API方式に加え、`convert_mineru_api.py`から常駐`mineru-api`へ接続する方式を追加した。API URLは`MINERU_API_URL`、API PIDファイルは`MINERU_API_PID_FILE`で変更できる
 - 常駐API方式は`/tmp/allganize-mineru-api.pid`を既定PIDファイルとし、共通ラッパーが変換クライアントとAPIプロセス系統のRAM・VRAMを合算して観測する。モデル初期化を本計測から除く場合は、API起動後に代表PDFを1件変換してウォームアップする
 - 常駐APIと一時APIは同じ`out/mineru/`と`metrics/mineru.csv`を使うため、同一比較結果へ方式を混在させず、実行方式とウォームアップ有無を比較結果へ記録する
+
+## 26. Docling非公開商用VLM比較枠(2026-08-07)
+
+- Node A上のOpenAI互換vLLMで稼働する非公開商用モデルは、公開モデル版と混在させず`docling-vlm-commercial`として比較する。実モデル名とAPIキーはリポジトリ、チャット、メトリクス、比較結果へ保存しない
+- 接続情報は`DOCLING_VLLM_URL`、`DOCLING_VLLM_MODEL`、`DOCLING_VLLM_API_KEY`で受け取る。比較結果には内部承認済み別名を記録し、実モデル名との対応はアクセス制御された別台帳で管理する
+- 非公開モデルはOpenAI互換の画像入力とMarkdown応答に対応することを前提とする。Doclingの汎用`ApiVlmOptions`を使い、モデル固有の公開プリセットは使用しない
+- `convert_docling_vlm_commercial.py`は`DOCLING_VLLM_PID`を必須とし、変換クライアントと常駐vLLMプロセス系統をRAM・VRAM計測へ含める。vLLMの起動停止は非公開モデルの既存管理手順を正とし、変換スクリプトから操作しない
+- `check_docling_vlm_commercial_api.py`は32×32のテスト画像を1回送信し、モデル名、APIキー、応答本文を表示せず画像入力の成否だけを確認する
+- この比較枠は当初の無償プロダクト比較とは別枠である。モデル契約、PDF入力条件、生成物の利用条件、追加費用を確認できない場合は実行しない

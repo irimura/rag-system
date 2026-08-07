@@ -18,6 +18,7 @@ from pathlib import Path
 PRODUCTS = {
     "docling": "docling {input} --pipeline standard --to md --output {work}",
     "docling-vlm": "docling {input} --pipeline vlm --vlm-model granite_docling --to md --output {work}",
+    "docling-vlm-commercial": "{python} {root}/scripts/docling_vlm_commercial_adapter.py --input {input} --output {output}",
     "mineru": "mineru -p {input} -o {work} -b pipeline",
     "paddleocr": "paddleocr pp_structurev3 -i {input} --device gpu --use_doc_orientation_classify True --use_doc_unwarping False --use_textline_orientation True --save_path {work}",
     "anydoc": "{python} -c 'import anydoc, pathlib, sys; pathlib.Path(sys.argv[2]).write_text(anydoc.to_markdown(sys.argv[1]), encoding=\"utf-8\")' {input} {output}",
