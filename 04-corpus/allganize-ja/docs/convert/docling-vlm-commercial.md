@@ -62,15 +62,23 @@ curl --fail --silent --show-error -o /dev/null -H @- http://127.0.0.1:8080/v1/mo
 
 この試験はAPIが画像を受理できることだけを確認します。PDF変換の品質やMarkdownの再現性は、後続のサンプル変換で評価してください。
 
-vLLMサービスの最上位プロセスを計測対象として設定します。GPUを直接使うワーカーPIDではなく、systemdの `MainPID` を指定することで、APIサーバーとその子孫ワーカーを計測します。
+Docker Composeで稼働するvLLMコンテナのホストPIDを計測対象として設定します。GPUを直接使うワーカーPIDではなく、コンテナの最上位PIDを指定することで、APIサーバーとその子孫ワーカーを計測します。
 
 ```bash
-export DOCLING_VLLM_PID="$(systemctl show --property MainPID --value vllm.service)"
+vllm_compose_dir=/home/ubuntu/rag-system/02-provisioning/node-a
+vllm_container_id="$(docker compose \
+  --project-directory "${vllm_compose_dir}" \
+  -f "${vllm_compose_dir}/docker-compose.yml" \
+  ps -q vllm)"
+test -n "${vllm_container_id}"
+export DOCLING_VLLM_PID="$(docker inspect --format '{{.State.Pid}}' "${vllm_container_id}")"
 test "${DOCLING_VLLM_PID}" -gt 0
 ps -p "${DOCLING_VLLM_PID}" -o pid=,ppid=,comm=
 ```
 
-systemd以外で起動している場合は、起動管理側で確認した最上位のAPIサーバーPIDを設定してください。`nvidia-smi`に表示されるエンジンワーカーPIDは指定しません。
+Composeファイルを別のディレクトリから起動した場合は、`vllm_compose_dir`を実際のプロジェクトディレクトリへ変更してください。`docker inspect`の `.State.Pid` は、コンテナPID 1に対応するホストPIDです。`nvidia-smi`に表示されるエンジンワーカーPIDは指定しません。
+
+このコマンドはComposeのサービス名が `vllm` であることを前提とします。`02-provisioning/node-a/docker-compose.yml` のサービス名を変更する場合は、本手順も同時に変更してください。
 
 必要に応じて、モデル名を含まないプロンプトファイルと実行設定を指定します。
 
@@ -109,7 +117,16 @@ source .venv-docling-vlm-commercial/bin/activate
 ```bash
 column -s, -t metrics/docling-vlm-commercial.csv | less -S
 python scripts/aggregate_metrics.py
+
+current_vllm_container_id="$(docker compose \
+  --project-directory "${vllm_compose_dir}" \
+  -f "${vllm_compose_dir}/docker-compose.yml" \
+  ps -q vllm)"
+current_vllm_pid="$(docker inspect --format '{{.State.Pid}}' "${current_vllm_container_id}")"
+test "${current_vllm_pid}" = "${DOCLING_VLLM_PID}"
 ```
+
+最後の `test` が失敗した場合は、変換中にコンテナが再起動した可能性があります。その実行のRAMとVRAMは過少計測の可能性があるため、比較値として採用せず再計測してください。
 
 比較結果には、実モデル名ではなく `commercial-vlm-a` などの内部承認済み別名、モデル版、量子化、vLLM版、プロンプト版、ウォームアップ有無を記録します。実モデル名との対応は、アクセス制御された別の台帳で管理してください。
 
@@ -122,7 +139,7 @@ python scripts/aggregate_metrics.py
 - Markdownが空または説明文だけの場合は、プロンプトとモデルの文書変換能力を確認します。実モデル名は障害票へ記載しません。
 - タイムアウト時は `DOCLING_VLLM_TIMEOUT` を増やします。出力が途中で切れる場合は `DOCLING_VLLM_MAX_TOKENS` とvLLM側のコンテキスト長を確認します。
 - PDF全体が7200秒で打ち切られる場合は、ページ数とサンプル実測から `CONVERT_TIMEOUT` を見積もり直します。
-- `DOCLING_VLLM_PID` の確認に失敗した場合は、`systemctl status vllm.service` でサービス状態を確認します。systemd以外の場合は、起動管理側で最上位のAPIサーバーPIDを確認します。
+- `DOCLING_VLLM_PID` の確認に失敗した場合は、実際に起動に使ったComposeプロジェクトで `docker compose ps vllm` を実行し、コンテナの状態と `vllm_compose_dir` を確認します。
 - vLLMのリクエストログにモデル名や本文を残さないでください。導入済みvLLMの `vllm serve --help` で `--disable-log-requests` の対応を確認し、非公開モデルの管理者が起動設定へ反映します。サービス設定やログの内容を共用ログへ貼り付けません。
 
 変換アダプター自身が生成する例外は、モデル名とAPIキーを伏せ字にしてからメトリクスへ渡します。DoclingとvLLMを含む外部ライブラリのログ管理とアクセス制御は別途必要です。

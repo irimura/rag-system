@@ -278,5 +278,6 @@ Codex の一次レビュー R-01〜R-10 を独立検証した。**判定・根�
 - `convert_docling_vlm_commercial.py`は`DOCLING_VLLM_PID`を必須とし、変換クライアントと常駐vLLMプロセス系統をRAM・VRAM計測へ含める。vLLMの起動停止は非公開モデルの既存管理手順を正とし、変換スクリプトから操作しない
 - `check_docling_vlm_commercial_api.py`は64×64のテスト画像を1回送信し、モデル名、APIキー、応答本文を表示せず画像入力の成否だけを確認する。応答読み取りは1,000,000バイトを上限とする
 - Node Aの既存vLLMサービスは8080番ポートで待ち受ける。`docling-vlm-commercial`は`http://127.0.0.1:8080/v1/chat/completions`へ接続する
-- 常駐vLLMの計測起点はGPUワーカーPIDではなく、systemdの`vllm.service`の`MainPID`とする。これによりAPIサーバーと子孫ワーカーを計測対象に含める
+- 常駐vLLMの計測起点はGPUワーカーPIDではなく、Docker ComposeのvLLMコンテナを`docker inspect`して得るホスト側`.State.Pid`とする。これはコンテナPID 1に対応するため、APIサーバーと子孫ワーカーを計測対象に含められる
+- 変換終了時にvLLMコンテナのホストPIDを再取得し、開始時の`DOCLING_VLLM_PID`と比較する。コンテナ再起動でPIDが変わった実行は、RAM・VRAMの過少計測があり得るため比較値に採用しない。Composeのサービス名は`vllm`を前提とする
 - この比較枠は当初の無償プロダクト比較とは別枠である。モデル契約、PDF入力条件、生成物の利用条件、追加費用を確認できない場合は実行しない
